@@ -87,7 +87,7 @@ def get_recent_orders():
     try:
         result = client.orders.search(
             location_ids=["LRG8TDY17X9VD"],
-            limit=2
+            limit=20
         )
         if hasattr(result, 'errors') and result.errors:
             print(f"API returned errors: {result.errors}")
@@ -95,6 +95,186 @@ def get_recent_orders():
     except Exception as e:
         print(f"Error fetching orders: {e}")
         return []
+
+def extract_order_data(orders, modifier_details):
+    """Extract order data into a structured format for table creation"""
+    order_data = []
+    
+    for order in orders:
+        order_id = order.id
+        total_money = f"{order.total_money.amount} {order.total_money.currency}"
+        
+        if hasattr(order, 'line_items') and order.line_items:
+            for line_item in order.line_items:
+                line_item_name = line_item.name
+                
+                # Initialize row with basic info
+                row = {
+                    'order_id': order_id,
+                    'total_money': total_money,
+                    'line_item_name': line_item_name,
+                    'scout_name': '',
+                    'rank': '',
+                    'patrol': '',
+                    'emergency_contact': '',
+                    'emergency_contact_phone': '',
+                    'travel_to_campout': ''
+                }
+                
+                # Extract modifier information
+                if hasattr(line_item, 'modifiers') and line_item.modifiers:
+                    for modifier in line_item.modifiers:
+                        modifier_name = modifier.name
+                        if modifier.catalog_object_id in modifier_details:
+                            obj = modifier_details[modifier.catalog_object_id]
+                            if hasattr(obj, 'modifier_data') and hasattr(obj.modifier_data, 'name'):
+                                modifier_name = obj.modifier_data.name
+                        
+                        # Check if modifier has modifier_list_id
+                        has_modifier_list = (
+                            modifier.catalog_object_id in modifier_details and
+                            hasattr(modifier_details[modifier.catalog_object_id], 'modifier_data') and
+                            hasattr(modifier_details[modifier.catalog_object_id].modifier_data, 'modifier_list_id') and
+                            modifier_details[modifier.catalog_object_id].modifier_data.modifier_list_id
+                        )
+                        
+                        if has_modifier_list:
+                            obj = modifier_details[modifier.catalog_object_id]
+                            modifier_list_id = obj.modifier_data.modifier_list_id
+                            # Get modifier list details
+                            modifier_list_details = get_modifier_list_details([{
+                                'catalog_version': line_item.catalog_version,
+                                'object_id': modifier_list_id
+                            }])
+                            
+                            if modifier_list_id in modifier_list_details:
+                                modifier_list_obj = modifier_list_details[modifier_list_id]
+                                if hasattr(modifier_list_obj, 'modifier_list_data') and hasattr(modifier_list_obj.modifier_list_data, 'name'):
+                                    modifier_list_name = modifier_list_obj.modifier_list_data.name
+                                    # Split modifier list name into key and value if it contains ":"
+                                    if ":" in modifier_list_name:
+                                        key, value = modifier_list_name.split(":", 1)
+                                        key = key.strip()
+                                        value = value.strip()
+                                        # If modifier name is not already in the value, append it
+                                        if modifier_name not in value:
+                                            combined_value = f"{value} - {modifier_name}"
+                                        else:
+                                            combined_value = value
+                                    else:
+                                        # If no colon in modifier list name, treat it as key and modifier name as value
+                                        key = modifier_list_name
+                                        combined_value = modifier_name
+                                    
+                                    # Map the key to the appropriate column
+                                    if key == "Scout Name":
+                                        row['scout_name'] = combined_value
+                                    elif key == "Rank":
+                                        row['rank'] = combined_value
+                                    elif key == "Patrol":
+                                        row['patrol'] = combined_value
+                                    elif key == "Emergency Contact":
+                                        row['emergency_contact'] = combined_value
+                                    elif key == "Emergency Contact Phone Number":
+                                        row['emergency_contact_phone'] = combined_value
+                                    elif key == "Will you travel with the troop to the campout?":
+                                        row['travel_to_campout'] = combined_value
+                        else:
+                            # For modifiers without modifier list, split modifier name into key and value if it contains ":"
+                            if ":" in modifier_name:
+                                key, value = modifier_name.split(":", 1)
+                                key = key.strip()
+                                value = value.strip()
+                                
+                                # Map the key to the appropriate column
+                                if key == "Scout Name":
+                                    row['scout_name'] = value
+                                elif key == "Rank":
+                                    row['rank'] = value
+                                elif key == "Patrol":
+                                    row['patrol'] = value
+                                elif key == "Emergency Contact":
+                                    row['emergency_contact'] = value
+                                elif key == "Emergency Contact Phone Number":
+                                    row['emergency_contact_phone'] = value
+                                elif key == "Will you travel with the troop to the campout?":
+                                    row['travel_to_campout'] = value
+                            else:
+                                # Handle modifiers without colons
+                                if modifier_name == "Scout Name":
+                                    row['scout_name'] = "Unknown"
+                                elif modifier_name == "Rank":
+                                    row['rank'] = "Unknown"
+                                elif modifier_name == "Patrol":
+                                    row['patrol'] = "Unknown"
+                
+                order_data.append(row)
+    
+    return order_data
+
+def create_dynamic_table(order_data):
+    """Create and display a dynamic table from order data"""
+    if not order_data:
+        print("No order data to display in table.")
+        return
+    
+    # Define column headers
+    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Scout Name', 'Rank', 'Patrol', 
+               'Emergency Contact', 'Emergency Contact Phone', 'Travel to Campout']
+    
+    # Calculate column widths
+    col_widths = []
+    for i, header in enumerate(headers):
+        width = len(header)
+        for row in order_data:
+            if i == 0:  # Order ID
+                width = max(width, len(row['order_id']))
+            elif i == 1:  # Total Money
+                width = max(width, len(row['total_money']))
+            elif i == 2:  # Line Item Name
+                width = max(width, len(row['line_item_name']))
+            elif i == 3:  # Scout Name
+                width = max(width, len(row['scout_name']))
+            elif i == 4:  # Rank
+                width = max(width, len(row['rank']))
+            elif i == 5:  # Patrol
+                width = max(width, len(row['patrol']))
+            elif i == 6:  # Emergency Contact
+                width = max(width, len(row['emergency_contact']))
+            elif i == 7:  # Emergency Contact Phone
+                width = max(width, len(row['emergency_contact_phone']))
+            elif i == 8:  # Travel to Campout
+                width = max(width, len(row['travel_to_campout']))
+        col_widths.append(width + 2)  # Add padding
+    
+    # Create header row
+    header_row = "|"
+    separator_row = "|"
+    for i, header in enumerate(headers):
+        header_row += f" {header.ljust(col_widths[i] - 2)} |"
+        separator_row += "-" * col_widths[i] + "|"
+    
+    # Print table
+    print("\nDynamic Order Table:")
+    print("=" * len(header_row))
+    print(header_row)
+    print(separator_row)
+    
+    # Print data rows
+    for row in order_data:
+        data_row = "|"
+        data_row += f" {row['order_id'].ljust(col_widths[0] - 2)} |"
+        data_row += f" {row['total_money'].ljust(col_widths[1] - 2)} |"
+        data_row += f" {row['line_item_name'].ljust(col_widths[2] - 2)} |"
+        data_row += f" {row['scout_name'].ljust(col_widths[3] - 2)} |"
+        data_row += f" {row['rank'].ljust(col_widths[4] - 2)} |"
+        data_row += f" {row['patrol'].ljust(col_widths[5] - 2)} |"
+        data_row += f" {row['emergency_contact'].ljust(col_widths[6] - 2)} |"
+        data_row += f" {row['emergency_contact_phone'].ljust(col_widths[7] - 2)} |"
+        data_row += f" {row['travel_to_campout'].ljust(col_widths[8] - 2)} |"
+        print(data_row)
+    
+    print("=" * len(header_row))
 
 def main():
     """Main function to fetch and display recent orders with modifier details"""
@@ -181,6 +361,12 @@ def main():
                                 print(f"    Modifier Name: {modifier_name}")
                 print()  # Empty line for separation
         print("-" * 50)
+    
+    # Extract structured data for table
+    order_data = extract_order_data(orders, modifier_details)
+    
+    # Create and display dynamic table
+    create_dynamic_table(order_data)
 
 if __name__ == "__main__":
     main()
