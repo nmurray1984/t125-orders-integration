@@ -48,6 +48,8 @@ def main():
                     for modifier in line_item.modifiers:
                         print(f"    Modifier UID: {modifier.uid}")
                         print(f"    Modifier Name: {modifier.name}")
+                        print(f"    Modifier Catalog Object ID:  {modifier.catalog_object_id}")
+                        print(f"    Modifier Catalog Version:  {modifier.catalog_version}")
                 print()  # Empty line for separation
         print("-" * 50)
 
