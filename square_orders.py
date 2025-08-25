@@ -120,15 +120,15 @@ def main():
         
         if hasattr(order, 'line_items') and order.line_items:
             for line_item in order.line_items:
-                print(f"  Line Item UID: {line_item.uid}")
+                #print(f"  Line Item UID: {line_item.uid}")
                 print(f"  Line Item Name: {line_item.name}")
-                print(f"  Catalog Object ID: {line_item.catalog_object_id}")
-                print(f"  Catalog Version: {line_item.catalog_version}")
-                print(f"  Variation Name: {line_item.variation_name}")
+                #print(f"  Catalog Object ID: {line_item.catalog_object_id}")
+                #print(f"  Catalog Version: {line_item.catalog_version}")
+                #print(f"  Variation Name: {line_item.variation_name}")
                 
                 if hasattr(line_item, 'modifiers') and line_item.modifiers:
                     for modifier in line_item.modifiers:
-                        print(f"    Modifier UID: {modifier.uid}")
+                        #print(f"    Modifier UID: {modifier.uid}")
                         # Get the actual modifier name from the modifier details
                         modifier_name = modifier.name
                         if modifier.catalog_object_id in modifier_details:
@@ -137,8 +137,8 @@ def main():
                                 modifier_name = obj.modifier_data.name
                         
                         print(f"    Modifier Name: {modifier_name}")
-                        print(f"    Modifier Catalog Object ID:  {modifier.catalog_object_id}")
-                        print(f"    Modifier Catalog Version:  {modifier.catalog_version}")
+                        #print(f"    Modifier Catalog Object ID:  {modifier.catalog_object_id}")
+                        #print(f"    Modifier Catalog Version:  {modifier.catalog_version}")
                         
                         # If modifier has modifier_list_id, get the modifier list name
                         if modifier.catalog_object_id in modifier_details:
