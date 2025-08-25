@@ -136,25 +136,49 @@ def main():
                             if hasattr(obj, 'modifier_data') and hasattr(obj.modifier_data, 'name'):
                                 modifier_name = obj.modifier_data.name
                         
-                        print(f"    Modifier Name: {modifier_name}")
-                        #print(f"    Modifier Catalog Object ID:  {modifier.catalog_object_id}")
-                        #print(f"    Modifier Catalog Version:  {modifier.catalog_version}")
+                        # Check if modifier has modifier_list_id
+                        has_modifier_list = (
+                            modifier.catalog_object_id in modifier_details and
+                            hasattr(modifier_details[modifier.catalog_object_id], 'modifier_data') and
+                            hasattr(modifier_details[modifier.catalog_object_id].modifier_data, 'modifier_list_id') and
+                            modifier_details[modifier.catalog_object_id].modifier_data.modifier_list_id
+                        )
                         
-                        # If modifier has modifier_list_id, get the modifier list name
-                        if modifier.catalog_object_id in modifier_details:
+                        if has_modifier_list:
                             obj = modifier_details[modifier.catalog_object_id]
-                            if hasattr(obj, 'modifier_data') and hasattr(obj.modifier_data, 'modifier_list_id'):
-                                modifier_list_id = obj.modifier_data.modifier_list_id
-                                # Get modifier list details
-                                modifier_list_details = get_modifier_list_details([{
-                                    'catalog_version': line_item.catalog_version,
-                                    'object_id': modifier_list_id
-                                }])
-                                
-                                if modifier_list_id in modifier_list_details:
-                                    modifier_list_obj = modifier_list_details[modifier_list_id]
-                                    if hasattr(modifier_list_obj, 'modifier_list_data') and hasattr(modifier_list_obj.modifier_list_data, 'name'):
-                                        print(f"    Modifier List Name: {modifier_list_obj.modifier_list_data.name}")
+                            modifier_list_id = obj.modifier_data.modifier_list_id
+                            # Get modifier list details
+                            modifier_list_details = get_modifier_list_details([{
+                                'catalog_version': line_item.catalog_version,
+                                'object_id': modifier_list_id
+                            }])
+                            
+                            if modifier_list_id in modifier_list_details:
+                                modifier_list_obj = modifier_list_details[modifier_list_id]
+                                if hasattr(modifier_list_obj, 'modifier_list_data') and hasattr(modifier_list_obj.modifier_list_data, 'name'):
+                                    modifier_list_name = modifier_list_obj.modifier_list_data.name
+                                    # Split modifier list name into key and value if it contains ":"
+                                    if ":" in modifier_list_name:
+                                        key, value = modifier_list_name.split(":", 1)
+                                        key = key.strip()
+                                        value = value.strip()
+                                        # If modifier name is not already in the value, append it
+                                        if modifier_name not in value:
+                                            print(f"    {key}: {value} - {modifier_name}")
+                                        else:
+                                            print(f"    {key}: {value}")
+                                    else:
+                                        # If no colon in modifier list name, treat it as key and modifier name as value
+                                        print(f"    {modifier_list_name}: {modifier_name}")
+                        else:
+                            # For modifiers without modifier list, split modifier name into key and value if it contains ":"
+                            if ":" in modifier_name:
+                                key, value = modifier_name.split(":", 1)
+                                key = key.strip()
+                                value = value.strip()
+                                print(f"    {key}: {value}")
+                            else:
+                                print(f"    Modifier Name: {modifier_name}")
                 print()  # Empty line for separation
         print("-" * 50)
 
