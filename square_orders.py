@@ -7,6 +7,8 @@ client = Square(
     token="***REMOVED***"
 )
 
+FETCH_LIMIT = 50
+
 def extract_modifier_list_ids(orders):
     """Extract modifier list IDs from orders"""
     modifier_list_ids = []
@@ -26,7 +28,7 @@ def get_modifier_details(catalog_versions_dict):
     """Get modifier details from Square API for each catalog version"""
     modifier_details = {}
     
-    for catalog_version, object_ids in catalog_versions_dict.items():
+    for catalog_version, object_ids in catalog_versions_dict.items(): 
         # Remove duplicates while preserving order
         unique_object_ids = list(dict.fromkeys(object_ids))
         
@@ -83,11 +85,11 @@ def get_modifier_list_details(modifier_list_ids):
     return modifier_list_details
 
 def get_recent_orders():
-    """Fetch the 30 most recent orders from Square API"""
+    """Fetch the most recent orders from Square API"""
     try:
         result = client.orders.search(
             location_ids=["LRG8TDY17X9VD"],
-            limit=20
+            limit=FETCH_LIMIT
         )
         if hasattr(result, 'errors') and result.errors:
             print(f"API returned errors: {result.errors}")
@@ -114,6 +116,7 @@ def extract_order_data(orders, modifier_details):
                     'total_money': total_money,
                     'line_item_name': line_item_name,
                     'scout_name': '',
+                    'scouter_name': '',
                     'rank': '',
                     'patrol': '',
                     'emergency_contact': '',
@@ -169,6 +172,8 @@ def extract_order_data(orders, modifier_details):
                                     # Map the key to the appropriate column
                                     if key == "Scout Name":
                                         row['scout_name'] = combined_value
+                                    elif key == "Scouter Name":
+                                        row['scouter_name'] = combined_value
                                     elif key == "Rank":
                                         row['rank'] = combined_value
                                     elif key == "Patrol":
@@ -179,6 +184,7 @@ def extract_order_data(orders, modifier_details):
                                         row['emergency_contact_phone'] = combined_value
                                     elif key == "Will you travel with the troop to the campout?":
                                         row['travel_to_campout'] = combined_value
+                        
                         else:
                             # For modifiers without modifier list, split modifier name into key and value if it contains ":"
                             if ":" in modifier_name:
@@ -189,6 +195,8 @@ def extract_order_data(orders, modifier_details):
                                 # Map the key to the appropriate column
                                 if key == "Scout Name":
                                     row['scout_name'] = value
+                                elif key == "Scouter Name":
+                                    row['scouter_name'] = value
                                 elif key == "Rank":
                                     row['rank'] = value
                                 elif key == "Patrol":
@@ -203,10 +211,34 @@ def extract_order_data(orders, modifier_details):
                                 # Handle modifiers without colons
                                 if modifier_name == "Scout Name":
                                     row['scout_name'] = "Unknown"
+                                elif modifier_name == "Scouter Name":
+                                    row['scouter_name'] = "Unknown"
                                 elif modifier_name == "Rank":
                                     row['rank'] = "Unknown"
                                 elif modifier_name == "Patrol":
                                     row['patrol'] = "Unknown"
+                                else:
+                                    # For other modifiers, check if the modifier name itself contains a colon
+                                    if ":" in modifier_name:
+                                        key, value = modifier_name.split(":", 1)
+                                        key = key.strip()
+                                        value = value.strip()
+                                        
+                                        # Map the key to the appropriate column
+                                        if key == "Scout Name":
+                                            row['scout_name'] = value
+                                        elif key == "Scouter Name":
+                                            row['scouter_name'] = value
+                                        elif key == "Rank":
+                                            row['rank'] = value
+                                        elif key == "Patrol":
+                                            row['patrol'] = value
+                                        elif key == "Emergency Contact":
+                                            row['emergency_contact'] = value
+                                        elif key == "Emergency Contact Phone Number":
+                                            row['emergency_contact_phone'] = value
+                                        elif key == "Will you travel with the troop to the campout?":
+                                            row['travel_to_campout'] = value
                 
                 order_data.append(row)
     
@@ -219,7 +251,7 @@ def create_dynamic_table(order_data):
         return
     
     # Define column headers
-    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Scout Name', 'Rank', 'Patrol', 
+    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Scout Name', 'Scouter Name', 'Rank', 'Patrol', 
                'Emergency Contact', 'Emergency Contact Phone', 'Travel to Campout']
     
     # Calculate column widths
@@ -235,15 +267,17 @@ def create_dynamic_table(order_data):
                 width = max(width, len(row['line_item_name']))
             elif i == 3:  # Scout Name
                 width = max(width, len(row['scout_name']))
-            elif i == 4:  # Rank
+            elif i == 4:  # Scouter Name
+                width = max(width, len(row['scouter_name']))
+            elif i == 5:  # Rank
                 width = max(width, len(row['rank']))
-            elif i == 5:  # Patrol
+            elif i == 6:  # Patrol
                 width = max(width, len(row['patrol']))
-            elif i == 6:  # Emergency Contact
+            elif i == 7:  # Emergency Contact
                 width = max(width, len(row['emergency_contact']))
-            elif i == 7:  # Emergency Contact Phone
+            elif i == 8:  # Emergency Contact Phone
                 width = max(width, len(row['emergency_contact_phone']))
-            elif i == 8:  # Travel to Campout
+            elif i == 9:  # Travel to Campout
                 width = max(width, len(row['travel_to_campout']))
         col_widths.append(width + 2)  # Add padding
     
@@ -267,11 +301,12 @@ def create_dynamic_table(order_data):
         data_row += f" {row['total_money'].ljust(col_widths[1] - 2)} |"
         data_row += f" {row['line_item_name'].ljust(col_widths[2] - 2)} |"
         data_row += f" {row['scout_name'].ljust(col_widths[3] - 2)} |"
-        data_row += f" {row['rank'].ljust(col_widths[4] - 2)} |"
-        data_row += f" {row['patrol'].ljust(col_widths[5] - 2)} |"
-        data_row += f" {row['emergency_contact'].ljust(col_widths[6] - 2)} |"
-        data_row += f" {row['emergency_contact_phone'].ljust(col_widths[7] - 2)} |"
-        data_row += f" {row['travel_to_campout'].ljust(col_widths[8] - 2)} |"
+        data_row += f" {row['scouter_name'].ljust(col_widths[4] - 2)} |"
+        data_row += f" {row['rank'].ljust(col_widths[5] - 2)} |"
+        data_row += f" {row['patrol'].ljust(col_widths[6] - 2)} |"
+        data_row += f" {row['emergency_contact'].ljust(col_widths[7] - 2)} |"
+        data_row += f" {row['emergency_contact_phone'].ljust(col_widths[8] - 2)} |"
+        data_row += f" {row['travel_to_campout'].ljust(col_widths[9] - 2)} |"
         print(data_row)
     
     print("=" * len(header_row))
@@ -358,7 +393,13 @@ def main():
                                 value = value.strip()
                                 print(f"    {key}: {value}")
                             else:
-                                print(f"    Modifier Name: {modifier_name}")
+                                # Handle modifiers without colons
+                                if modifier_name == "Scout Name":
+                                    print(f"    Scout Name: Unknown")
+                                elif modifier_name == "Scouter Name":
+                                    print(f"    Scouter Name: Unknown")
+                                else:
+                                    print(f"    Modifier Name: {modifier_name}")
                 print()  # Empty line for separation
         print("-" * 50)
     
