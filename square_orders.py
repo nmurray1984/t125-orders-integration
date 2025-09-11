@@ -1,3 +1,5 @@
+import csv
+import sys
 from square import Square
 from square.environment import SquareEnvironment
 from collections import defaultdict
@@ -7,7 +9,7 @@ client = Square(
     token="***REMOVED***"
 )
 
-FETCH_LIMIT = 50
+FETCH_LIMIT = 70
 
 def extract_modifier_list_ids(orders):
     """Extract modifier list IDs from orders"""
@@ -245,71 +247,39 @@ def extract_order_data(orders, modifier_details):
     return order_data
 
 def create_dynamic_table(order_data):
-    """Create and display a dynamic table from order data"""
+    """Write order data as CSV to stdout"""
     if not order_data:
-        print("No order data to display in table.")
+        print("No order data to write to CSV.")
         return
     
-    # Define column headers
-    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Scout Name', 'Scouter Name', 'Rank', 'Patrol', 
+    # Define column headers with combined 'Name' column
+    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Name', 'Rank', 'Patrol', 
                'Emergency Contact', 'Emergency Contact Phone', 'Travel to Campout']
     
-    # Calculate column widths
-    col_widths = []
-    for i, header in enumerate(headers):
-        width = len(header)
-        for row in order_data:
-            if i == 0:  # Order ID
-                width = max(width, len(row['order_id']))
-            elif i == 1:  # Total Money
-                width = max(width, len(row['total_money']))
-            elif i == 2:  # Line Item Name
-                width = max(width, len(row['line_item_name']))
-            elif i == 3:  # Scout Name
-                width = max(width, len(row['scout_name']))
-            elif i == 4:  # Scouter Name
-                width = max(width, len(row['scouter_name']))
-            elif i == 5:  # Rank
-                width = max(width, len(row['rank']))
-            elif i == 6:  # Patrol
-                width = max(width, len(row['patrol']))
-            elif i == 7:  # Emergency Contact
-                width = max(width, len(row['emergency_contact']))
-            elif i == 8:  # Emergency Contact Phone
-                width = max(width, len(row['emergency_contact_phone']))
-            elif i == 9:  # Travel to Campout
-                width = max(width, len(row['travel_to_campout']))
-        col_widths.append(width + 2)  # Add padding
+    # Create a CSV writer that writes to stdout
+    writer = csv.DictWriter(sys.stdout, fieldnames=headers)
     
-    # Create header row
-    header_row = "|"
-    separator_row = "|"
-    for i, header in enumerate(headers):
-        header_row += f" {header.ljust(col_widths[i] - 2)} |"
-        separator_row += "-" * col_widths[i] + "|"
+    # Write the header row
+    writer.writeheader()
     
-    # Print table
-    print("\nDynamic Order Table:")
-    print("=" * len(header_row))
-    print(header_row)
-    print(separator_row)
-    
-    # Print data rows
+    # Write data rows
     for row in order_data:
-        data_row = "|"
-        data_row += f" {row['order_id'].ljust(col_widths[0] - 2)} |"
-        data_row += f" {row['total_money'].ljust(col_widths[1] - 2)} |"
-        data_row += f" {row['line_item_name'].ljust(col_widths[2] - 2)} |"
-        data_row += f" {row['scout_name'].ljust(col_widths[3] - 2)} |"
-        data_row += f" {row['scouter_name'].ljust(col_widths[4] - 2)} |"
-        data_row += f" {row['rank'].ljust(col_widths[5] - 2)} |"
-        data_row += f" {row['patrol'].ljust(col_widths[6] - 2)} |"
-        data_row += f" {row['emergency_contact'].ljust(col_widths[7] - 2)} |"
-        data_row += f" {row['emergency_contact_phone'].ljust(col_widths[8] - 2)} |"
-        data_row += f" {row['travel_to_campout'].ljust(col_widths[9] - 2)} |"
-        print(data_row)
-    
-    print("=" * len(header_row))
+        # Combine scout_name and scouter_name into a single Name field
+        name = row['scout_name'] if row['scout_name'] else row['scouter_name']
+        patrol = row['patrol'] if row['patrol'] else 'Rocking Chair'
+        
+        # Create a new dictionary with properly formatted keys
+        csv_row = {
+            'Order ID': row['order_id'],
+            'Line Item Name': row['line_item_name'],
+            'Name': name,
+            'Rank': row['rank'],
+            'Patrol': patrol,
+            'Emergency Contact': row['emergency_contact'],
+            'Emergency Contact Phone': row['emergency_contact_phone'],
+            'Travel to Campout': row['travel_to_campout']
+        }
+        writer.writerow(csv_row)
 
 def main():
     """Main function to fetch and display recent orders with modifier details"""
