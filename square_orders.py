@@ -123,6 +123,7 @@ def extract_order_data(orders, modifier_details):
                     'patrol': '',
                     'emergency_contact': '',
                     'emergency_contact_phone': '',
+                    'cell_phone': '',
                     'travel_to_campout': ''
                 }
                 
@@ -182,10 +183,12 @@ def extract_order_data(orders, modifier_details):
                                         row['patrol'] = combined_value
                                     elif key == "Emergency Contact":
                                         row['emergency_contact'] = combined_value
-                                    elif key == "Emergency Contact Phone Number":
-                                        row['emergency_contact_phone'] = combined_value
-                                    elif key == "Will you travel with the troop to the campout?":
-                                        row['travel_to_campout'] = combined_value
+                                elif key == "Emergency Contact Phone Number":
+                                    row['emergency_contact_phone'] = combined_value
+                                elif key == "Cell phone number":
+                                    row['cell_phone'] = combined_value
+                                elif key == "Will you travel with the troop to the campout?":
+                                    row['travel_to_campout'] = combined_value
                         
                         else:
                             # For modifiers without modifier list, split modifier name into key and value if it contains ":"
@@ -207,6 +210,8 @@ def extract_order_data(orders, modifier_details):
                                     row['emergency_contact'] = value
                                 elif key == "Emergency Contact Phone Number":
                                     row['emergency_contact_phone'] = value
+                                elif key == "Cell phone number":
+                                    row['cell_phone'] = value
                                 elif key == "Will you travel with the troop to the campout?":
                                     row['travel_to_campout'] = value
                             else:
@@ -239,6 +244,8 @@ def extract_order_data(orders, modifier_details):
                                             row['emergency_contact'] = value
                                         elif key == "Emergency Contact Phone Number":
                                             row['emergency_contact_phone'] = value
+                                        elif key == "Cell phone number":
+                                            row['cell_phone'] = value
                                         elif key == "Will you travel with the troop to the campout?":
                                             row['travel_to_campout'] = value
                 
@@ -254,7 +261,7 @@ def create_dynamic_table(order_data):
     
     # Define column headers with combined 'Name' column
     headers = ['Order ID', 'Total Money', 'Line Item Name', 'Name', 'Rank', 'Patrol', 
-               'Emergency Contact', 'Emergency Contact Phone', 'Travel to Campout']
+               'Emergency Contact', 'Emergency Contact Phone', 'Cell Phone', 'Travel to Campout']
     
     # Create a CSV writer that writes to stdout
     writer = csv.DictWriter(sys.stdout, fieldnames=headers)
@@ -277,6 +284,7 @@ def create_dynamic_table(order_data):
             'Patrol': patrol,
             'Emergency Contact': row['emergency_contact'],
             'Emergency Contact Phone': row['emergency_contact_phone'],
+            'Cell Phone': row['cell_phone'],
             'Travel to Campout': row['travel_to_campout']
         }
         writer.writerow(csv_row)
@@ -298,80 +306,6 @@ def main():
     
     print("\nOrder Details:")
     print("-" * 50)
-    
-    for order in orders:
-        print(f"Order ID: {order.id}")
-        print(f"Total Money: {order.total_money.amount} {order.total_money.currency}")
-        
-        if hasattr(order, 'line_items') and order.line_items:
-            for line_item in order.line_items:
-                #print(f"  Line Item UID: {line_item.uid}")
-                print(f"  Line Item Name: {line_item.name}")
-                #print(f"  Catalog Object ID: {line_item.catalog_object_id}")
-                #print(f"  Catalog Version: {line_item.catalog_version}")
-                #print(f"  Variation Name: {line_item.variation_name}")
-                
-                if hasattr(line_item, 'modifiers') and line_item.modifiers:
-                    for modifier in line_item.modifiers:
-                        #print(f"    Modifier UID: {modifier.uid}")
-                        # Get the actual modifier name from the modifier details
-                        modifier_name = modifier.name
-                        if modifier.catalog_object_id in modifier_details:
-                            obj = modifier_details[modifier.catalog_object_id]
-                            if hasattr(obj, 'modifier_data') and hasattr(obj.modifier_data, 'name'):
-                                modifier_name = obj.modifier_data.name
-                        
-                        # Check if modifier has modifier_list_id
-                        has_modifier_list = (
-                            modifier.catalog_object_id in modifier_details and
-                            hasattr(modifier_details[modifier.catalog_object_id], 'modifier_data') and
-                            hasattr(modifier_details[modifier.catalog_object_id].modifier_data, 'modifier_list_id') and
-                            modifier_details[modifier.catalog_object_id].modifier_data.modifier_list_id
-                        )
-                        
-                        if has_modifier_list:
-                            obj = modifier_details[modifier.catalog_object_id]
-                            modifier_list_id = obj.modifier_data.modifier_list_id
-                            # Get modifier list details
-                            modifier_list_details = get_modifier_list_details([{
-                                'catalog_version': line_item.catalog_version,
-                                'object_id': modifier_list_id
-                            }])
-                            
-                            if modifier_list_id in modifier_list_details:
-                                modifier_list_obj = modifier_list_details[modifier_list_id]
-                                if hasattr(modifier_list_obj, 'modifier_list_data') and hasattr(modifier_list_obj.modifier_list_data, 'name'):
-                                    modifier_list_name = modifier_list_obj.modifier_list_data.name
-                                    # Split modifier list name into key and value if it contains ":"
-                                    if ":" in modifier_list_name:
-                                        key, value = modifier_list_name.split(":", 1)
-                                        key = key.strip()
-                                        value = value.strip()
-                                        # If modifier name is not already in the value, append it
-                                        if modifier_name not in value:
-                                            print(f"    {key}: {value} - {modifier_name}")
-                                        else:
-                                            print(f"    {key}: {value}")
-                                    else:
-                                        # If no colon in modifier list name, treat it as key and modifier name as value
-                                        print(f"    {modifier_list_name}: {modifier_name}")
-                        else:
-                            # For modifiers without modifier list, split modifier name into key and value if it contains ":"
-                            if ":" in modifier_name:
-                                key, value = modifier_name.split(":", 1)
-                                key = key.strip()
-                                value = value.strip()
-                                print(f"    {key}: {value}")
-                            else:
-                                # Handle modifiers without colons
-                                if modifier_name == "Scout Name":
-                                    print(f"    Scout Name: Unknown")
-                                elif modifier_name == "Scouter Name":
-                                    print(f"    Scouter Name: Unknown")
-                                else:
-                                    print(f"    Modifier Name: {modifier_name}")
-                print()  # Empty line for separation
-        print("-" * 50)
     
     # Extract structured data for table
     order_data = extract_order_data(orders, modifier_details)
