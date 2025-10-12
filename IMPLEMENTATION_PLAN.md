@@ -16,25 +16,12 @@
 - Share target Google Sheet with service account email
 - Requires: `GOOGLE_CREDENTIALS_JSON` environment variable
 
-## 2. Scheduling Options
+## 2. Scheduling
 
-### Option A: GitHub Actions (Recommended)
+### GitHub Actions
 - Add `.github/workflows/nightly-sync.yml`
 - Cron schedule: `0 6 * * *` (6 AM UTC daily)
 - Store secrets in GitHub Secrets
-- Free for public repos, generous limits for private
-- Built-in logging and error notifications
-
-### Option B: Cloud Scheduler (GCP/AWS/Azure)
-- Deploy as Cloud Function/Lambda
-- Use native scheduler service
-- Better for existing cloud infrastructure
-- Costs: ~$0.10/month + compute time
-
-### Option C: Local Cron Job
-- Simple crontab entry on server
-- Requires always-on machine
-- Good for self-hosted scenarios
 
 ## 3. Configuration Management
 
@@ -59,18 +46,15 @@
 - Add `--output` CLI argument: `stdout` (default) or `sheets`
 
 ### Error Handling:
-- Wrap API calls in try/except with exponential backoff
-- Log errors to file and/or notification service
-- Implement retry logic for transient failures
-- Add alerting for repeated failures
+- Wrap API calls in try/except
+- Log errors to stdout
 
 ## 5. Testing Strategy
 
 ### New Tests:
 - `test_google_sheets_integration.py` with mocked Google API
-- Test credential loading and validation
 - Test sheet writing (clear vs append modes)
-- Test error handling and retries
+- Test error handling
 
 ### Integration Test:
 - Manual test run against test Google Sheet
@@ -80,14 +64,10 @@
 ## 6. Monitoring & Alerts
 
 ### Logging:
-- Add structured logging (JSON format)
-- Log: execution time, record count, errors, API quotas
-- Rotate logs daily
+- Log: execution time, record count, errors, API calls
 
 ### Notifications:
-- Send email/Slack notification on failure
-- Optional: Daily success confirmation with record count
-- Use GitHub Actions notifications or cloud service alerts
+- Use GitHub Actions notifications on script failure
 
 ## 7. Documentation Updates
 
