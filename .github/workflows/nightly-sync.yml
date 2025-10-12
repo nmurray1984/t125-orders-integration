@@ -1,0 +1,42 @@
+name: Nightly Square to Google Sheets Sync
+
+on:
+  # Run nightly at 6 AM UTC (1 AM EST / 10 PM PST)
+  schedule:
+    - cron: '0 6 * * *'
+
+  # Allow manual trigger for testing
+  workflow_dispatch:
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Square to Google Sheets sync
+        env:
+          SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
+          SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID }}
+          GOOGLE_SHEET_ID: ${{ secrets.GOOGLE_SHEET_ID }}
+          GOOGLE_CREDENTIALS_JSON: ${{ secrets.GOOGLE_CREDENTIALS_JSON }}
+          SHEET_NAME: ${{ secrets.SHEET_NAME || 'Sheet1' }}
+          WRITE_MODE: ${{ secrets.WRITE_MODE || 'overwrite' }}
+        run: |
+          python square_orders.py --output sheets
+
+      - name: Report execution time
+        if: always()
+        run: echo "Sync completed at $(date)"

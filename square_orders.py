@@ -1,15 +1,17 @@
 import csv
 import sys
+import argparse
 from square import Square
 from square.environment import SquareEnvironment
 from collections import defaultdict
+from config import Config
 
 client = Square(
     environment=SquareEnvironment.PRODUCTION,
-    token="***REMOVED***"
+    token=Config.SQUARE_ACCESS_TOKEN
 )
 
-FETCH_LIMIT = 70
+FETCH_LIMIT = Config.SQUARE_FETCH_LIMIT
 
 def extract_modifier_list_ids(orders):
     """Extract modifier list IDs from orders"""
@@ -90,7 +92,7 @@ def get_recent_orders():
     """Fetch the most recent orders from Square API"""
     try:
         result = client.orders.search(
-            location_ids=["LRG8TDY17X9VD"],
+            location_ids=[Config.SQUARE_LOCATION_ID],
             limit=FETCH_LIMIT
         )
         if hasattr(result, 'errors') and result.errors:
@@ -253,31 +255,32 @@ def extract_order_data(orders, modifier_details):
     
     return order_data
 
-def create_dynamic_table(order_data):
+def write_csv_to_stdout(order_data):
     """Write order data as CSV to stdout"""
     if not order_data:
         print("No order data to write to CSV.")
         return
-    
+
     # Define column headers with combined 'Name' column
-    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Name', 'Rank', 'Patrol', 
+    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Name', 'Rank', 'Patrol',
                'Emergency Contact', 'Emergency Contact Phone', 'Cell Phone', 'Travel to Campout']
-    
+
     # Create a CSV writer that writes to stdout
     writer = csv.DictWriter(sys.stdout, fieldnames=headers)
-    
+
     # Write the header row
     writer.writeheader()
-    
+
     # Write data rows
     for row in order_data:
         # Combine scout_name and scouter_name into a single Name field
         name = row['scout_name'] if row['scout_name'] else row['scouter_name']
         patrol = row['patrol'] if row['patrol'] else 'Rocking Chair'
-        
+
         # Create a new dictionary with properly formatted keys
         csv_row = {
             'Order ID': row['order_id'],
+            'Total Money': row['total_money'],
             'Line Item Name': row['line_item_name'],
             'Name': name,
             'Rank': row['rank'],
@@ -291,27 +294,50 @@ def create_dynamic_table(order_data):
 
 def main():
     """Main function to fetch and display recent orders with modifier details"""
-    print("Fetching recent orders from Square API...")
+    # Parse command line arguments
+    parser = argparse.ArgumentParser(
+        description='Fetch Square orders and output to CSV or Google Sheets'
+    )
+    parser.add_argument(
+        '--output',
+        choices=['stdout', 'sheets'],
+        default='stdout',
+        help='Output mode: stdout (CSV to console) or sheets (Google Sheets)'
+    )
+    args = parser.parse_args()
+
+    # Validate configuration based on output mode
+    if args.output == 'sheets':
+        Config.validate_google_sheets_config()
+    Config.validate_square_config()
+
+    print("Fetching recent orders from Square API...", file=sys.stderr)
     orders = get_recent_orders()
-    
+
     if not orders:
-        print("No orders found.")
+        print("No orders found.", file=sys.stderr)
         return
-    
+
     # Extract modifier list IDs from orders
     catalog_versions_dict = extract_modifier_list_ids(orders)
-    
+
     # Get modifier details
     modifier_details = get_modifier_details(catalog_versions_dict)
-    
-    print("\nOrder Details:")
-    print("-" * 50)
-    
+
+    print("\nOrder Details:", file=sys.stderr)
+    print("-" * 50, file=sys.stderr)
+
     # Extract structured data for table
     order_data = extract_order_data(orders, modifier_details)
-    
-    # Create and display dynamic table
-    create_dynamic_table(order_data)
+
+    # Output based on mode
+    if args.output == 'stdout':
+        write_csv_to_stdout(order_data)
+    elif args.output == 'sheets':
+        from google_sheets import write_to_google_sheet
+        success = write_to_google_sheet(order_data)
+        if not success:
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()
