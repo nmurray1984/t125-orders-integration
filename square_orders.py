@@ -183,12 +183,12 @@ def extract_order_data(orders, modifier_details):
                                         row['patrol'] = combined_value
                                     elif key == "Emergency Contact":
                                         row['emergency_contact'] = combined_value
-                                elif key == "Emergency Contact Phone Number":
-                                    row['emergency_contact_phone'] = combined_value
-                                elif key == "Cell phone number":
-                                    row['cell_phone'] = combined_value
-                                elif key == "Will you travel with the troop to the campout?":
-                                    row['travel_to_campout'] = combined_value
+                                    elif key == "Emergency Contact Phone Number":
+                                        row['emergency_contact_phone'] = combined_value
+                                    elif key == "Cell phone number":
+                                        row['cell_phone'] = combined_value
+                                    elif key == "Will you travel with the troop to the campout?":
+                                        row['travel_to_campout'] = combined_value
                         
                         else:
                             # For modifiers without modifier list, split modifier name into key and value if it contains ":"
