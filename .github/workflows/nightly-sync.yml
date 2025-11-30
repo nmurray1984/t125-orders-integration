@@ -3,7 +3,7 @@ name: Nightly Square to Google Sheets Sync
 on:
   # Run nightly at 6 AM UTC (1 AM EST / 10 PM PST)
   schedule:
-    - cron: '0 6 * * *'
+    - cron: '0 0-5,12-23 * * *'
 
   # Allow manual trigger for testing
   workflow_dispatch:
