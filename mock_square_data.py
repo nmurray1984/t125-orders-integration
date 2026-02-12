@@ -257,6 +257,36 @@ mock_catalog_modifiers_with_list_response = MockAPIResponse(
     ]
 )
 
+# Mock order with None total_money (e.g., refunded order)
+mock_refunded_order = MockOrder(
+    id="ORDER_REFUNDED",
+    total_money=None,
+    line_items=[
+        MockLineItem(
+            uid="LINE_ITEM_R_1",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_R_1_1",
+                    name="Scout Name: Refunded Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        )
+    ]
+)
+
+# Mock orders response that includes a refunded order
+mock_orders_with_refund_response = MockAPIResponse(
+    orders=[
+        mock_orders_response.orders[0],  # Normal order
+        mock_refunded_order              # Refunded order with None total_money
+    ]
+)
+
 # Empty responses for testing edge cases
 mock_empty_orders_response = MockAPIResponse(orders=[])
 

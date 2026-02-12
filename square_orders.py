@@ -108,7 +108,10 @@ def extract_order_data(orders, modifier_details):
     
     for order in orders:
         order_id = order.id
-        total_money = f"{order.total_money.amount} {order.total_money.currency}"
+        if order.total_money:
+            total_money = f"{order.total_money.amount} {order.total_money.currency}"
+        else:
+            total_money = "0 USD"
         
         if hasattr(order, 'line_items') and order.line_items:
             for line_item in order.line_items:

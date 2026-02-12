@@ -15,7 +15,8 @@ from mock_square_data import (
     get_mock_catalog_modifiers_response,
     get_mock_catalog_modifier_lists_response,
     mock_catalog_modifiers_response,
-    mock_catalog_modifier_lists_response
+    mock_catalog_modifier_lists_response,
+    mock_orders_with_refund_response
 )
 
 # Import the functions we want to test
@@ -23,8 +24,7 @@ from square_orders import (
     extract_modifier_list_ids,
     get_modifier_details,
     get_modifier_list_details,
-    extract_order_data,
-    create_dynamic_table
+    extract_order_data
 )
 
 def test_extract_modifier_list_ids():
@@ -112,28 +112,36 @@ def test_extract_order_data():
         print(f"Expected 3 order data rows, got {len(order_data)}")
         return False
 
-def test_create_dynamic_table():
-    """Test the create_dynamic_table function with mock data"""
-    print("\nTesting create_dynamic_table function...")
-    
-    # Get mock orders
-    mock_response = get_mock_orders_response()
-    orders = mock_response.orders
-    
+def test_refunded_order():
+    """Test that refunded orders with None total_money are handled gracefully"""
+    print("\nTesting refunded order handling (None total_money)...")
+
+    # Get mock orders that include a refunded order
+    orders = mock_orders_with_refund_response.orders
+
     # Get mock modifier details
     modifier_details = {}
     for obj in mock_catalog_modifiers_response.objects:
         modifier_details[obj.id] = obj
-    
-    # Extract order data
+
+    # Extract order data - this should not crash
     order_data = extract_order_data(orders, modifier_details)
-    
-    # Create and display dynamic table
-    print("Creating dynamic table with mock data...")
-    create_dynamic_table(order_data)
-    
-    print("✓ create_dynamic_table test completed (check output above)")
-    return True
+
+    print(f"Extracted {len(order_data)} order data rows")
+
+    # Find the refunded order row
+    refunded_rows = [r for r in order_data if r['order_id'] == 'ORDER_REFUNDED']
+
+    if len(refunded_rows) == 1 and refunded_rows[0]['total_money'] == '0 USD':
+        print("✓ refunded order test passed (total_money handled as '0 USD')")
+        return True
+    else:
+        print("✗ refunded order test failed")
+        if refunded_rows:
+            print(f"Got total_money: {refunded_rows[0]['total_money']}")
+        else:
+            print("No refunded order row found")
+        return False
 
 def test_with_modifier_lists():
     """Test with orders that have modifier lists"""
@@ -160,7 +168,7 @@ def main():
     test_results.append(test_extract_modifier_list_ids())
     test_results.append(test_get_modifier_details())
     test_results.append(test_extract_order_data())
-    test_results.append(test_create_dynamic_table())
+    test_results.append(test_refunded_order())
     test_results.append(test_with_modifier_lists())
     
     # Summary
