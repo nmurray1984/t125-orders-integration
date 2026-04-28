@@ -1,5 +1,7 @@
 import json
 import sys
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from google.oauth2 import service_account
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
@@ -148,3 +150,23 @@ def write_to_google_sheet(data, sheet_id=None, sheet_name=None, write_mode='over
     except Exception as e:
         print(f"Error writing to Google Sheet: {e}")
         return False
+
+
+def log_last_update(sheet_id=None):
+    """Write the current UTC timestamp to LastUpdate!A1"""
+    sheet_id = sheet_id or Config.GOOGLE_SHEET_ID
+    timestamp = datetime.now(ZoneInfo('America/Chicago')).strftime('%Y-%m-%d %H:%M:%S %Z')
+    try:
+        service = get_sheets_service()
+        service.spreadsheets().values().update(
+            spreadsheetId=sheet_id,
+            range='LastUpdate!A1',
+            valueInputOption='RAW',
+            body={'values': [[timestamp]]}
+        ).execute()
+        print(f"Logged last update timestamp: {timestamp}")
+    except HttpError as e:
+        error_details = json.loads(e.content.decode('utf-8'))
+        print(f"Error logging update timestamp: {error_details.get('error', {}).get('message', str(e))}")
+    except Exception as e:
+        print(f"Error logging update timestamp: {e}")
