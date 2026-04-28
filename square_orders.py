@@ -337,10 +337,11 @@ def main():
     if args.output == 'stdout':
         write_csv_to_stdout(order_data)
     elif args.output == 'sheets':
-        from google_sheets import write_to_google_sheet
+        from google_sheets import write_to_google_sheet, log_last_update
         success = write_to_google_sheet(order_data)
         if not success:
             sys.exit(1)
+        log_last_update()
 
 if __name__ == "__main__":
     main()
