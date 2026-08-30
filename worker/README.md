@@ -31,7 +31,21 @@ npx wrangler d1 create t125-roster
 ```
 
 It prints a `database_id`. **Paste it into `wrangler.toml`**, replacing
-`REPLACE_WITH_YOUR_D1_DATABASE_ID`. `npm run deploy` refuses to run until you do.
+`REPLACE_WITH_YOUR_D1_DATABASE_ID`.
+
+Do this before step 3 -- every *remote* D1 command needs the real id, and
+skipping it produces `Invalid property: databaseId => Invalid uuid`, which does
+not obviously mean "you missed a step". `npm run db:init` and `npm run deploy`
+both refuse to run until it is filled in.
+
+Already created the database and lost the id?
+
+```bash
+npx wrangler d1 list
+```
+
+Local commands are unaffected -- they resolve the database by name, which is
+why `db:init:local` works without it.
 
 ### 3. Create the tables
 

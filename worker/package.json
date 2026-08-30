@@ -9,7 +9,8 @@
     "db:init": "wrangler d1 execute t125-roster --remote --file=./schema.sql",
     "db:init:local": "wrangler d1 execute t125-roster --local --file=./schema.sql",
     "test": "node --test test/*.test.js",
-    "predeploy": "node scripts/preflight.mjs"
+    "predeploy": "node scripts/preflight.mjs",
+    "predb:init": "node scripts/preflight.mjs"
   },
   "devDependencies": {
     "wrangler": "^4.0.0"
