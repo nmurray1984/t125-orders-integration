@@ -128,6 +128,13 @@ In GitHub: **Settings → Secrets and variables → Actions → Secrets**.
 | `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template |
 | `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages, right-hand sidebar |
 
+These live in the **`prod` environment** (Settings → Environments → prod), not in
+repository secrets, matching where this repo already kept its secrets. The
+deploy job names that environment; a job that does not name it sees environment
+secrets as empty strings, and wrangler then falls back to an interactive login
+that no runner can answer. Repository-level secrets work too — then drop
+`environment: prod` from the deploy job.
+
 After that, pushing to `main` runs the tests and deploys if they pass. No
 secrets or data are touched by a deploy.
 
