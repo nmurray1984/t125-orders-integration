@@ -11,46 +11,129 @@ gets overwritten each run therefore loses older campouts, which is why a new
 sheet had to be made each time. D1 rows are **upserted and never deleted**, so
 every campout stays queryable and the front end just filters by campout name.
 
-## One-time setup
+## Deploying
+
+### 1. Connect wrangler to your Cloudflare account
 
 ```bash
 cd worker
 npm install
-
-# 1. Create the database, then paste the printed id into wrangler.toml
-npx wrangler d1 create t125-roster
-
-# 2. Create the tables
-npm run db:init
-
-# 3. Set the three secrets
-npx wrangler secret put TROOP_PASSWORD   # what your leaders type in
-npx wrangler secret put SESSION_SECRET   # any long random string, see below
-npx wrangler secret put SYNC_TOKEN       # any long random string, see below
-
-# 4. Ship it
-npm run deploy
+npx wrangler login
 ```
 
-Generate the two random values with:
+That opens a browser to authorize. `npx wrangler whoami` confirms which account
+you are on.
+
+### 2. Create the database
+
+```bash
+npx wrangler d1 create t125-roster
+```
+
+It prints a `database_id`. **Paste it into `wrangler.toml`**, replacing
+`REPLACE_WITH_YOUR_D1_DATABASE_ID`. `npm run deploy` refuses to run until you do.
+
+### 3. Create the tables
+
+```bash
+npm run db:init
+```
+
+This is the remote database. `db:init:local` is the local one -- different
+database, and easy to confuse. Safe to re-run; every statement is
+`CREATE TABLE IF NOT EXISTS`.
+
+### 4. Set the three secrets
+
+```bash
+npx wrangler secret put TROOP_PASSWORD   # what leaders type in
+npx wrangler secret put SESSION_SECRET   # long random string
+npx wrangler secret put SYNC_TOKEN       # long random string
+```
+
+Generate the two random ones:
 
 ```bash
 openssl rand -base64 32
 ```
 
-`SESSION_SECRET` signs the login cookie and `SYNC_TOKEN` authenticates the
-GitHub Actions sync. They are unrelated to each other and to the troop
-password — do not reuse one for another.
+They are unrelated to each other and to the troop password -- do not reuse one
+for another. Keep a copy of `SYNC_TOKEN`; GitHub Actions needs it next.
 
-## Point the sync at it
+### 5. Deploy
 
-Add these to the repo's GitHub Actions config:
+```bash
+npm run deploy
+```
 
-| Where | Name | Value |
+It prints your URL, something like
+`https://t125-roster.<your-subdomain>.workers.dev`. Open it and sign in with
+`TROOP_PASSWORD`. The roster will be empty until the first sync.
+
+### 6. Point the nightly sync at it
+
+In GitHub: **Settings → Secrets and variables → Actions**.
+
+| Tab | Name | Value |
 | --- | --- | --- |
 | Variables | `D1_SYNC_URL` | `https://t125-roster.<subdomain>.workers.dev/api/sync` |
-| Secrets | `D1_SYNC_TOKEN` | the `SYNC_TOKEN` you set above |
-| Variables | `OUTPUT_MODE` | `both` while migrating, then `d1` |
+| Variables | `OUTPUT_MODE` | `both` at first, then `d1` |
+| Secrets | `D1_SYNC_TOKEN` | the `SYNC_TOKEN` from step 4 |
+
+Note the `/api/sync` on the end of the URL.
+
+### 7. Load it now instead of waiting for the schedule
+
+Either trigger the workflow by hand (Actions tab → the sync workflow → Run
+workflow), or push from your machine:
+
+```bash
+cd ..
+D1_SYNC_URL=https://t125-roster.<subdomain>.workers.dev/api/sync \
+D1_SYNC_TOKEN=<your SYNC_TOKEN> \
+python square_orders.py --square-env production --output d1
+```
+
+`--square-env production` matters: the CLI defaults to sandbox, and you do not
+want test scouts in the real roster.
+
+## Deploying again later
+
+```bash
+npm run deploy
+```
+
+Code only. Secrets and data are untouched. If you changed `schema.sql`, run
+`npm run db:init` too.
+
+## If something is wrong
+
+| Symptom | Cause |
+| --- | --- |
+| 503, "Worker is not configured. Missing: ..." | that secret is not set -- step 4 |
+| "database error: no such table: registrations" | step 3 was skipped, or ran locally |
+| Sync returns 401 | `D1_SYNC_TOKEN` does not match the Worker's `SYNC_TOKEN` |
+| Login page but the password is refused | 10 wrong tries per IP per 15 min; wait, or clear `login_attempts` |
+| Empty roster after a sync | check the sync ran against `--square-env production` |
+
+Read the remote database directly when in doubt:
+
+```bash
+npx wrangler d1 execute t125-roster --remote \
+  --command "SELECT campout, COUNT(*) FROM registrations GROUP BY campout"
+```
+
+## Custom domain (optional)
+
+A `workers.dev` URL works fine. To use your own, add the domain to Cloudflare,
+then in the dashboard: Workers & Pages → t125-roster → Settings → Domains &
+Routes → Add custom domain. TLS is automatic.
+
+## Cost
+
+Nothing, at troop scale. The free tier covers 100k Worker requests/day and
+5 GB / 5M row reads / 100k row writes per day on D1; an hourly sync of ~70
+registrations uses a tiny fraction of that.
 
 ## Rotating the password
 
