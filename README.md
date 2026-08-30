@@ -1,152 +1,99 @@
 # Troop 125 Square Orders Integration
 
-Pulls campout registrations out of Square, parses the scout details hidden in
-order modifiers, and publishes them to a **Cloudflare D1 database with a small
-password-protected web front end** (and/or a Google Sheet).
+Campout registrations from Square, published to a password-protected web
+roster. **Everything runs on Cloudflare**: a Worker serves the roster, a cron
+trigger pulls from Square hourly, and D1 stores it. GitHub holds the code and
+deploys it on push.
 
-## Why the web app exists
+```
+Square Orders API
+        |  hourly cron trigger
+        v
+  Cloudflare Worker  --->  D1 (SQLite)
+        |
+        v
+  Web roster (shared troop password)
+```
 
-Square's Orders API only returns a rolling window of recent orders, and the
-old Google Sheets sync overwrote a single tab on every run. Older campouts
-scrolled off the end, which is why a fresh sheet had to be created for each
-campout by hand.
+## Why it works this way
 
-D1 rows are **upserted and never deleted**, so every campout accumulates in one
-place and the front end simply filters by campout name. No more per-campout
-sheets.
+Square's Orders API returns only a rolling window of recent orders, and the
+old Google Sheets sync overwrote a single tab each run, so older campouts
+scrolled off and a fresh sheet had to be made per campout by hand.
 
-## Requirements
+D1 rows are **upserted and never deleted**, so campouts accumulate and the
+front end filters by campout name.
 
-- Python 3.11+
-- A Square account with API credentials
-- A Cloudflare account (free tier is sufficient) for the web app
+## Repository layout
 
-## Setup
+| Path | What it is |
+| --- | --- |
+| `worker/` | everything that runs in production -- Worker, cron sync, web UI, D1 schema |
+| `square_orders.py` | local CLI for inspecting Square data and manual backfills |
+| `d1_sync.py` | pushes CLI-extracted rows to the Worker |
+| `seed_local.py` | fake registrations for local development |
+| `scripts/make_worker_fixture.py` | regenerates the fixtures pinning the Worker parser to the Python one |
+
+The Python parser is no longer in the production path -- the Worker has its
+own port of it in `worker/src/extract.js`. The two are kept honest by
+`worker/test/fixtures/`, generated from the Python implementation and asserted
+byte-identical in CI. If you change parsing rules, change them in both and
+regenerate.
+
+## Deploying
+
+See [`worker/README.md`](worker/README.md). Once `CLOUDFLARE_API_TOKEN` and
+`CLOUDFLARE_ACCOUNT_ID` are set as GitHub secrets, **pushing to `main` deploys
+automatically** after the tests pass.
+
+## The local CLI
+
+Useful for looking at Square data without touching anything:
 
 ```bash
 pip install -r requirements.txt
-cp .env.example .env   # then fill it in
+cp .env.example .env          # then fill it in
+
+python square_orders.py --square-env sandbox --check     # verify credentials
+python square_orders.py --square-env production          # print orders as CSV
 ```
 
-All configuration is via environment variables — see `config.py`. Nothing is
-hardcoded in the script.
+`--square-env` defaults to **sandbox**; reading production is always
+deliberate. Every run prints which environment, credential source and location
+it used.
 
-| Variable | Required for | Notes |
-| --- | --- | --- |
-| `SQUARE_ACCESS_TOKEN` | always | Square API token (production) |
-| `SQUARE_LOCATION_ID` | always | e.g. `LRG8TDY17X9VD` |
-| `SQUARE_SANDBOX_ACCESS_TOKEN` | sandbox | sandbox token; falls back to the above |
-| `SQUARE_SANDBOX_LOCATION_ID` | sandbox | sandbox location, distinct from production |
-| `SQUARE_ENVIRONMENT` | optional | default for `--square-env`, default `sandbox` |
-| `SQUARE_FETCH_LIMIT` | optional | orders to fetch, default 70 |
-| `D1_SYNC_URL` | `--output d1` | `https://…/api/sync` on your Worker |
-| `D1_SYNC_TOKEN` | `--output d1` | the Worker's `SYNC_TOKEN` secret |
-| `GOOGLE_SHEET_ID` | `--output sheets` | target spreadsheet |
-| `GOOGLE_CREDENTIALS_JSON` | `--output sheets` | service account JSON |
-| `SHEET_NAME` | optional | default `Sheet1` |
-| `WRITE_MODE` | optional | `overwrite` or `append` |
-
-## Usage
+To push a manual backfill into the deployed roster:
 
 ```bash
-python square_orders.py                  # CSV to stdout (default)
-python square_orders.py --output d1      # Cloudflare D1 web app
-python square_orders.py --output sheets  # Google Sheets
-python square_orders.py --output both    # Sheets + D1, for the migration
-```
-
-Use `both` while you are still double-checking the web app against the sheet,
-then switch to `d1` and stop maintaining the spreadsheet.
-
-### Sandbox vs production
-
-`--square-env` picks which Square environment to read from, and **defaults to
-`sandbox`** — reading real orders is always something you asked for:
-
-```bash
-python square_orders.py --square-env sandbox --output stdout
+D1_SYNC_URL=https://t125-roster.<subdomain>.workers.dev/api/sync \
+D1_SYNC_TOKEN=<your SYNC_TOKEN> \
 python square_orders.py --square-env production --output d1
 ```
 
-`SQUARE_ENVIRONMENT` sets the default when the flag is omitted; the flag wins
-over it. The scheduled GitHub Actions sync passes `--square-env production`
-explicitly, so flipping the local default never affects it.
+You should rarely need this -- the cron does it hourly.
 
-Check credentials before doing anything else — this lists the locations your
-token can actually see, which answers both "is the token right" and "is the
-location ID right" at once:
+### Environment variables
 
-```bash
-python square_orders.py --square-env sandbox --check
-```
+| Variable | Required for | Notes |
+| --- | --- | --- |
+| `SQUARE_ACCESS_TOKEN` | CLI | production token |
+| `SQUARE_LOCATION_ID` | CLI | e.g. `LRG8TDY17X9VD` |
+| `SQUARE_SANDBOX_ACCESS_TOKEN` | sandbox | falls back to the above |
+| `SQUARE_SANDBOX_LOCATION_ID` | sandbox | distinct from production |
+| `SQUARE_ENVIRONMENT` | optional | default for `--square-env`, default `sandbox` |
+| `SQUARE_FETCH_LIMIT` | optional | orders to fetch, default 70 |
+| `D1_SYNC_URL` | `--output d1` | the Worker's `/api/sync` |
+| `D1_SYNC_TOKEN` | `--output d1` | the Worker's `SYNC_TOKEN` secret |
 
-Every run prints which environment, credential source and location it used, so
-you are never guessing. Sandbox has its own token *and* its own location ID —
-they are not interchangeable. Put them in `SQUARE_SANDBOX_ACCESS_TOKEN` and
-`SQUARE_SANDBOX_LOCATION_ID` and both environments can live in `.env` at once.
-
-Syncing sandbox data to a non-local `D1_SYNC_URL` prints a warning: invented
-scouts would otherwise land in the real roster.
-
-## The web app
-
-Setup instructions live in [`worker/README.md`](worker/README.md). In short:
-
-```bash
-cd worker
-npm install
-npx wrangler d1 create t125-roster    # paste the id into wrangler.toml
-npm run db:init
-npx wrangler secret put TROOP_PASSWORD
-npx wrangler secret put SESSION_SECRET
-npx wrangler secret put SYNC_TOKEN
-npm run deploy
-```
-
-Leaders visit the Worker URL, enter one shared troop password, pick a campout,
-and get a searchable roster with CSV export and a print-friendly view. It works
-on a phone.
-
-### Running the web app locally
-
-No Cloudflare account or Square credentials needed:
-
-```bash
-cd worker
-npm install
-printf 'TROOP_PASSWORD=localdev\nSESSION_SECRET=localdev-session-secret\nSYNC_TOKEN=localdev-sync-token\n' > .dev.vars
-npm run db:init:local
-npm run dev
-```
-
-Then in a second terminal, load fake registrations and open
-http://127.0.0.1:8787 (password `localdev`):
-
-```bash
-python seed_local.py
-```
-
-See [`worker/README.md`](worker/README.md) for using real Square data locally
-and for resetting the local database.
-
-**Access control is a single shared password.** Sign-in issues an HMAC-signed,
-HttpOnly cookie (30 days by default) and failed attempts are rate limited per
-IP, but everyone uses the same secret — so treat the URL as sensitive, and
-rotate `SESSION_SECRET` (not just the password) when someone leaves the troop,
-since that is what invalidates existing sessions immediately.
+The Worker reads its own configuration from Cloudflare secrets and vars, not
+from `.env`.
 
 ## Tests
 
 ```bash
 python test_square_orders.py   # modifier parsing against mock Square data
-python test_d1_sync.py         # payload mapping, batching, retry behavior
-cd worker && npm test          # auth, session cookies, CSV escaping
+python test_d1_sync.py         # payload mapping, batching, Square env selection
+cd worker && npm test          # Worker: parser, sync, auth, campout dates, CSV
 ```
 
-No test makes a network call. All three run in CI before the sync job.
-
-## Automation
-
-`.github/workflows/nightly-sync.yml` runs hourly except 1am–5am CST, and runs
-the test suites before syncing. Configure `D1_SYNC_URL` and `OUTPUT_MODE` as
-repository *variables* and `D1_SYNC_TOKEN` as a *secret*.
+No test makes a network call. All of them run in CI before any deploy.

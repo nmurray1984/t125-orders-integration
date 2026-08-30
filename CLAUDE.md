@@ -4,9 +4,27 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python-based Square API integration project that fetches order data from Square's Orders API and extracts structured information (scout/scouter names, ranks, patrols, emergency contacts, etc.) from order modifiers. The data can be output as CSV to stdout, written to Google Sheets, or synced to a Cloudflare D1 database that backs a password-protected web roster (`worker/`).
+Campout registrations from Square, published to a password-protected web roster.
+**Everything in the production path runs on Cloudflare**: a Worker serves the
+roster, a cron trigger pulls from Square hourly, and D1 stores the rows. GitHub
+holds the code and deploys on push to `main`.
 
-**Why D1 exists**: Square returns only a rolling window of recent orders, and the Sheets sync overwrites a single tab each run, so older campouts were lost -- hence the manual "one sheet per campout" workflow. D1 rows are upserted and never deleted, so campouts accumulate and the web UI filters by campout name.
+**Why D1 exists**: Square returns only a rolling window of recent orders, and the
+old Sheets sync overwrote a single tab each run, so older campouts were lost --
+hence the manual "one sheet per campout" workflow it replaced. D1 rows are
+upserted and never deleted, so campouts accumulate and the web UI filters by
+campout name.
+
+**Two parsers, one behavior**: the modifier-parsing logic exists in Python
+(`square_orders.py`, the local CLI) and in JavaScript (`worker/src/extract.js`,
+the production path). They are pinned together by `worker/test/fixtures/`,
+generated from the Python implementation by `scripts/make_worker_fixture.py` and
+asserted byte-identical in CI. Changing parsing rules means changing both and
+regenerating the fixtures deliberately.
+
+**Google Sheets has been retired.** `google_sheets.py` and the `sheets`/`both`
+output modes were removed once the cron sync landed; recover them from git
+history if ever needed.
 
 ## Key Commands
 
@@ -17,35 +35,29 @@ pip install -r requirements.txt
 
 ### Run the Application
 
-**Output to stdout (CSV)**:
+The scheduled sync runs on Cloudflare Cron -- nothing needs to be run by hand.
+The CLI is for inspecting Square data and manual backfills:
+
 ```bash
-python square_orders.py
-# or explicitly:
-python square_orders.py --output stdout
+python square_orders.py --square-env sandbox --check   # verify credentials
+python square_orders.py --square-env production        # CSV to stdout
+python square_orders.py --square-env production --output d1   # manual backfill
 ```
 
-**Write to Google Sheets**:
-```bash
-python square_orders.py --output sheets
-```
+Trigger the deployed sync immediately instead of waiting for the cron:
 
-**Sync to Cloudflare D1 (web roster)**:
 ```bash
-python square_orders.py --output d1
-```
-
-**Both Sheets and D1** (for running side by side during the migration):
-```bash
-python square_orders.py --output both
+curl -X POST https://<worker>/api/run-sync -H "Authorization: Bearer <SYNC_TOKEN>"
 ```
 
 ### Run Tests
 ```bash
 python test_square_orders.py   # modifier parsing, mock Square data
-python test_d1_sync.py         # D1 payload mapping, batching, retries
-cd worker && npm test          # Worker auth, session cookies, CSV escaping
+python test_d1_sync.py         # D1 payload mapping, batching, Square env selection
+cd worker && npm test          # parser port, cron sync, auth, campout dates, CSV
 ```
-All tests use mocks/stubs -- no actual API calls.
+All tests use mocks/stubs -- no actual API calls. CI runs all three before any
+deploy, and also regenerates the parser fixtures and fails if they drift.
 
 ### Worker (local)
 ```bash
@@ -86,11 +98,14 @@ npm run dev             # wrangler dev, reads secrets from .dev.vars
      - Modifiers with lists: Uses modifier list name as key, modifier name as value
    - Maps to output columns: scout_name, scouter_name, rank, patrol, emergency_contact, emergency_contact_phone, cell_phone, travel_to_campout
 
-6. **Output** (square_orders.py:258-293)
+6. **Output**
    - `write_csv_to_stdout()`: Writes structured data as CSV to stdout
-   - `write_to_google_sheet()`: Writes data to Google Sheets (imported from google_sheets.py)
+   - `d1_sync.sync_to_d1()`: Pushes rows to the Worker's `/api/sync`
    - Combines scout_name and scouter_name into single "Name" column
    - Default patrol: "Rocking Chair" if not specified
+
+Note this describes the **CLI** path. Production runs the JavaScript port in
+`worker/src/` on a cron trigger; the two are pinned together by the fixtures.
 
 ### Square API Integration
 
@@ -119,28 +134,15 @@ environment, credential source and location to stderr.
 
 **Important**: All Catalog API calls must specify `catalog_version` parameter. Each order line item has its own catalog version, and modifiers must be fetched using the correct version.
 
-### Google Sheets Integration
-
-**Module**: google_sheets.py
-
-**Authentication**: Uses Google Service Account credentials from `GOOGLE_CREDENTIALS_JSON` environment variable
-
-**Key Functions**:
-- `get_sheets_service()`: Creates authenticated Google Sheets API service
-- `write_to_google_sheet()`: Writes order data to specified Google Sheet
-  - Supports two modes: 'overwrite' (clears and rewrites) and 'append' (adds to existing data)
-  - Automatically formats data with headers
-  - Returns success/failure status
-
-**Configuration**: See config.py for all Google Sheets related environment variables
-
 ### Cloudflare D1 / Worker Integration
 
-**Modules**: `d1_sync.py` (Python side), `worker/` (Cloudflare side)
+**Production data flow** (hourly cron): `worker/src/sync.js` -> `square.js`
+fetches orders and catalog objects -> `extract.js` parses modifiers ->
+`registrations.js` upserts into D1 -> web front end reads them back.
 
-**Data flow**: `square_orders.py` extracts rows -> `d1_sync.build_rows()` maps them
-to the Worker payload -> batched `POST /api/sync` (bearer `SYNC_TOKEN`) -> Worker
-upserts into D1 -> web front end reads them back.
+**Manual/CLI data flow**: `square_orders.py` extracts rows -> `d1_sync.build_rows()`
+-> batched `POST /api/sync` (bearer `SYNC_TOKEN`) -> the same upsert path.
+`POST /api/run-sync` triggers the cron's work on demand with the same token.
 
 **Primary key**: `(order_id, line_item_uid)`. `order_id` alone is NOT unique -- a
 single order can register several people, one per line item. `extract_order_data()`
@@ -217,66 +219,18 @@ All configuration is managed through environment variables (see config.py). Set 
 - `SQUARE_SANDBOX_ACCESS_TOKEN` / `SQUARE_SANDBOX_LOCATION_ID`: sandbox equivalents
 - `SQUARE_ENVIRONMENT`: default for `--square-env` (default: "sandbox")
 
-**For Google Sheets output (required when using `--output sheets`)**:
-- `GOOGLE_SHEET_ID`: Target Google Spreadsheet ID
-- `GOOGLE_CREDENTIALS_JSON`: Service account credentials as JSON string
-
 ### Optional Environment Variables
 
 - `SQUARE_FETCH_LIMIT`: Number of orders to fetch (default: 70)
-- `SHEET_NAME`: Sheet/tab name in Google Sheets (default: "Sheet1")
-- `WRITE_MODE`: Google Sheets write mode - "overwrite" or "append" (default: "overwrite")
 
-### Setting Up Google Sheets Integration
+### GitHub Actions
 
-1. **Create a Google Cloud Project**:
-   - Go to https://console.cloud.google.com
-   - Create a new project or select an existing one
+`.github/workflows/deploy.yml` runs the three test suites on every push and PR,
+then deploys to Cloudflare on push to `main`. It needs two repository secrets:
+`CLOUDFLARE_API_TOKEN` and `CLOUDFLARE_ACCOUNT_ID`.
 
-2. **Enable Google Sheets API**:
-   - In the Google Cloud Console, go to "APIs & Services" > "Library"
-   - Search for "Google Sheets API" and enable it
-
-3. **Create a Service Account**:
-   - Go to "APIs & Services" > "Credentials"
-   - Click "Create Credentials" > "Service Account"
-   - Fill in the service account details and create
-   - Click on the created service account
-   - Go to "Keys" tab > "Add Key" > "Create New Key" > "JSON"
-   - Download the JSON key file
-
-4. **Share Your Google Sheet**:
-   - Open your target Google Sheet
-   - Click "Share" button
-   - Add the service account email (found in the JSON key file as `client_email`)
-   - Give it "Editor" permissions
-
-5. **Set Environment Variables**:
-   ```bash
-   export SQUARE_ACCESS_TOKEN="your_square_token"
-   export SQUARE_LOCATION_ID="your_location_id"
-   export GOOGLE_SHEET_ID="your_sheet_id"  # From the sheet URL
-   export GOOGLE_CREDENTIALS_JSON='{"type":"service_account",...}'  # Contents of JSON key file
-   ```
-
-### GitHub Actions Automation
-
-The project includes a GitHub Actions workflow (`.github/workflows/nightly-sync.yml`) that runs hourly except 1am-5am CST. It runs all three test suites before the sync job.
-
-**Setup**:
-1. Go to your GitHub repository > Settings > Secrets and variables > Actions
-2. Add the following **secrets**:
-   - `SQUARE_ACCESS_TOKEN`
-   - `SQUARE_LOCATION_ID`
-   - `GOOGLE_CREDENTIALS_JSON`
-   - `D1_SYNC_TOKEN` (must match the Worker's `SYNC_TOKEN`)
-3. Add the following **variables**:
-   - `GOOGLE_SHEET_ID`
-   - `D1_SYNC_URL` (e.g. `https://t125-roster.<subdomain>.workers.dev/api/sync`)
-   - `OUTPUT_MODE` (`both` during migration, then `d1`)
-   - `SHEET_NAME`, `WRITE_MODE`, `SQUARE_FETCH_LIMIT` (optional)
-
-4. The workflow runs on its schedule and can also be triggered manually from the Actions tab.
+There is no longer a sync workflow -- the sync is a Cloudflare Cron Trigger
+(`[triggers] crons` in `worker/wrangler.toml`, handler in `worker/src/sync.js`).
 
 ### Cloudflare Worker Setup
 

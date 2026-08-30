@@ -19,10 +19,18 @@ database_name = "t125-roster"
 # Replace with the id printed by: wrangler d1 create t125-roster
 database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
 
+# Hourly except 1am-5am CST, matching the schedule the GitHub Action ran on.
+[triggers]
+crons = ["0 0-5,12-23 * * *"]
+
 [vars]
 SESSION_DAYS = "30"
+SQUARE_ENVIRONMENT = "production"
+SQUARE_FETCH_LIMIT = "70"
 
 # Secrets are NOT set here. Set them once with:
 #   wrangler secret put TROOP_PASSWORD
 #   wrangler secret put SESSION_SECRET
 #   wrangler secret put SYNC_TOKEN
+#   wrangler secret put SQUARE_ACCESS_TOKEN
+#   wrangler secret put SQUARE_LOCATION_ID

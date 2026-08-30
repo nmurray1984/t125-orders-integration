@@ -12,77 +12,16 @@ import {
 } from './auth.js';
 import { annotateCampouts } from './campouts.js';
 import { ROSTER_COLUMNS, toCsv } from './csv.js';
+import { normalizeRow, recordSync, upsertRows } from './registrations.js';
+import { runSync } from './sync.js';
 
 const ALL_CAMPOUTS = '__all__';
-const UPSERT_CHUNK_SIZE = 50;
-
-const REGISTRATION_FIELDS = [
-  'order_id',
-  'line_item_uid',
-  'campout',
-  'variation_name',
-  'name',
-  'scout_name',
-  'scouter_name',
-  'rank',
-  'patrol',
-  'emergency_contact',
-  'emergency_contact_phone',
-  'cell_phone',
-  'travel_to_campout',
-  'total_money',
-  'order_created_at',
-];
 
 function json(body, init = {}) {
   const headers = new Headers(init.headers);
   headers.set('Content-Type', 'application/json; charset=utf-8');
   headers.set('Cache-Control', 'no-store');
   return new Response(JSON.stringify(body), { ...init, headers });
-}
-
-function text(value) {
-  return value === null || value === undefined ? '' : String(value);
-}
-
-/**
- * Rows arrive from the Python sync, which builds them from Square modifier
- * parsing. Normalize here so a malformed row can never widen the schema or
- * smuggle an unexpected column into the upsert.
- */
-function normalizeRow(raw) {
-  if (!raw || typeof raw !== 'object') return null;
-  const orderId = text(raw.order_id).trim();
-  const lineItemUid = text(raw.line_item_uid).trim();
-  if (!orderId || !lineItemUid) return null;
-
-  const row = {};
-  for (const field of REGISTRATION_FIELDS) row[field] = text(raw[field]).slice(0, 500);
-  row.order_id = orderId;
-  row.line_item_uid = lineItemUid;
-  return row;
-}
-
-async function upsertRows(env, rows, syncedAt) {
-  const statement = env.DB.prepare(
-    `INSERT INTO registrations (
-       ${REGISTRATION_FIELDS.join(', ')}, first_seen_at, synced_at
-     ) VALUES (${REGISTRATION_FIELDS.map((_, i) => `?${i + 1}`).join(', ')},
-       ?${REGISTRATION_FIELDS.length + 1}, ?${REGISTRATION_FIELDS.length + 1})
-     ON CONFLICT(order_id, line_item_uid) DO UPDATE SET
-       ${REGISTRATION_FIELDS
-         .filter((f) => f !== 'order_id' && f !== 'line_item_uid')
-         .map((f) => `${f} = excluded.${f}`)
-         .join(',\n       ')},
-       synced_at = excluded.synced_at`,
-  );
-
-  for (let i = 0; i < rows.length; i += UPSERT_CHUNK_SIZE) {
-    const chunk = rows.slice(i, i + UPSERT_CHUNK_SIZE);
-    await env.DB.batch(
-      chunk.map((row) => statement.bind(...REGISTRATION_FIELDS.map((f) => row[f]), syncedAt)),
-    );
-  }
 }
 
 async function handleSync(request, env) {
@@ -108,15 +47,34 @@ async function handleSync(request, env) {
     if (rows.length) await upsertRows(env, rows, syncedAt);
     // Only the final batch records the sync, so a multi-batch run logs once.
     if (payload.final !== false) {
-      await env.DB.prepare(
-        'INSERT INTO sync_log (synced_at, rows_seen, ok, detail) VALUES (?1, ?2, 1, ?3)',
-      ).bind(syncedAt, rows.length, skipped ? `${skipped} row(s) skipped` : '').run();
+      await recordSync(env, {
+        syncedAt,
+        rowsSeen: rows.length,
+        detail: skipped ? `${skipped} row(s) skipped` : '',
+      });
     }
   } catch (error) {
     return json({ error: `database error: ${error.message}` }, { status: 500 });
   }
 
   return json({ ok: true, upserted: rows.length, skipped, synced_at: syncedAt });
+}
+
+/**
+ * Run the Square sync on demand. Same work the cron does -- useful right after
+ * deploying, rather than waiting for the next scheduled run.
+ */
+async function handleRunSync(request, env) {
+  if (!(await hasValidSyncToken(env, request))) {
+    return json({ error: 'unauthorized' }, { status: 401 });
+  }
+
+  try {
+    const result = await runSync(env);
+    return json(result, { status: result.ok ? 200 : 503 });
+  } catch (error) {
+    return json({ error: `sync failed: ${error.message}` }, { status: 502 });
+  }
 }
 
 async function handleLogin(request, env) {
@@ -241,6 +199,33 @@ function missingConfig(env) {
 }
 
 export default {
+  /**
+   * Cron entry point. Cloudflare gives a scheduled invocation its own
+   * lifetime, so waitUntil keeps the sync alive to completion rather than
+   * being cut off when the handler returns.
+   */
+  async scheduled(event, env, ctx) {
+    ctx.waitUntil((async () => {
+      try {
+        const result = await runSync(env);
+        console.log('scheduled sync', JSON.stringify(result));
+      } catch (error) {
+        // Recorded so the UI's "last synced" does not silently freeze.
+        console.error('scheduled sync failed:', error.message);
+        try {
+          await recordSync(env, {
+            syncedAt: new Date().toISOString(),
+            rowsSeen: 0,
+            ok: false,
+            detail: error.message.slice(0, 300),
+          });
+        } catch (logError) {
+          console.error('could not record the failure:', logError.message);
+        }
+      }
+    })());
+  },
+
   async fetch(request, env) {
     const url = new URL(request.url);
 
@@ -259,6 +244,10 @@ export default {
     // Machine-to-machine, authenticated by bearer token rather than the cookie.
     if (url.pathname === '/api/sync' && request.method === 'POST') {
       return handleSync(request, env);
+    }
+
+    if (url.pathname === '/api/run-sync' && request.method === 'POST') {
+      return handleRunSync(request, env);
     }
 
     if (url.pathname === '/api/login' && request.method === 'POST') {

@@ -432,7 +432,7 @@ def main():
     """Main function to fetch and display recent orders with modifier details"""
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Fetch Square orders and output to CSV or Google Sheets'
+        description='Fetch Square orders and print them, or push them to the roster Worker'
     )
     parser.add_argument(
         '--square-env',
@@ -449,17 +449,16 @@ def main():
     )
     parser.add_argument(
         '--output',
-        choices=['stdout', 'sheets', 'd1', 'both'],
+        choices=['stdout', 'd1'],
         default='stdout',
-        help='Output mode: stdout (CSV to console), sheets (Google Sheets), '
-             'd1 (Cloudflare D1 via the roster Worker), or both (sheets + d1)'
+        help='Output mode: stdout (CSV to console) or d1 (push to the roster '
+             'Worker). The scheduled sync runs on Cloudflare Cron; this CLI is '
+             'for inspecting Square data and for manual backfills.'
     )
     args = parser.parse_args()
 
     # Validate configuration based on output mode
-    if args.output in ('sheets', 'both'):
-        Config.validate_google_sheets_config()
-    if args.output in ('d1', 'both'):
+    if args.output == 'd1':
         Config.validate_d1_config()
 
     token, location_id, source = Config.validate_square_config(args.square_env)
@@ -475,7 +474,7 @@ def main():
     # Sandbox registrations are fake. Letting them into the deployed roster
     # would mix invented scouts in with real ones.
     if (args.square_env == 'sandbox'
-            and args.output in ('d1', 'both')
+            and args.output == 'd1'
             and not Config.is_local_sync_url()):
         print("WARNING: syncing SANDBOX data to a non-local D1 "
               f"({Config.D1_SYNC_URL}). Test data will land in the real roster.",
@@ -500,27 +499,12 @@ def main():
     # Extract structured data for table
     order_data = extract_order_data(orders, modifier_details)
 
-    # Output based on mode. 'both' writes to Sheets and D1 so the two can run
-    # side by side during the migration; a failure in either is fatal.
-    failed = False
-
     if args.output == 'stdout':
         write_csv_to_stdout(order_data)
-
-    if args.output in ('sheets', 'both'):
-        from google_sheets import write_to_google_sheet, log_last_update
-        if write_to_google_sheet(order_data):
-            log_last_update()
-        else:
-            failed = True
-
-    if args.output in ('d1', 'both'):
+    elif args.output == 'd1':
         from d1_sync import sync_to_d1
         if not sync_to_d1(order_data):
-            failed = True
-
-    if failed:
-        sys.exit(1)
+            sys.exit(1)
 
 if __name__ == "__main__":
     main()

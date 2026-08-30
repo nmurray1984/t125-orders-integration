@@ -57,12 +57,14 @@ This is the remote database. `db:init:local` is the local one -- different
 database, and easy to confuse. Safe to re-run; every statement is
 `CREATE TABLE IF NOT EXISTS`.
 
-### 4. Set the three secrets
+### 4. Set the secrets
 
 ```bash
-npx wrangler secret put TROOP_PASSWORD   # what leaders type in
-npx wrangler secret put SESSION_SECRET   # long random string
-npx wrangler secret put SYNC_TOKEN       # long random string
+npx wrangler secret put TROOP_PASSWORD       # what leaders type in
+npx wrangler secret put SESSION_SECRET       # long random string
+npx wrangler secret put SYNC_TOKEN           # long random string
+npx wrangler secret put SQUARE_ACCESS_TOKEN  # from the Square dashboard
+npx wrangler secret put SQUARE_LOCATION_ID   # e.g. LRG8TDY17X9VD
 ```
 
 Generate the two random ones:
@@ -71,8 +73,12 @@ Generate the two random ones:
 openssl rand -base64 32
 ```
 
-They are unrelated to each other and to the troop password -- do not reuse one
-for another. Keep a copy of `SYNC_TOKEN`; GitHub Actions needs it next.
+`TROOP_PASSWORD` is typed by people, so make it memorable. `SESSION_SECRET`
+and `SYNC_TOKEN` are never typed by anyone, so make them random. They are
+unrelated -- do not reuse one for another.
+
+`SQUARE_ENVIRONMENT` is a var in `wrangler.toml`, set to `production`. Change
+it there and redeploy to point the cron at sandbox.
 
 ### 5. Deploy
 
@@ -84,40 +90,63 @@ It prints your URL, something like
 `https://t125-roster.<your-subdomain>.workers.dev`. Open it and sign in with
 `TROOP_PASSWORD`. The roster will be empty until the first sync.
 
-### 6. Point the nightly sync at it
+### 6. Fill it now instead of waiting for the cron
 
-In GitHub: **Settings → Secrets and variables → Actions**.
-
-| Tab | Name | Value |
-| --- | --- | --- |
-| Variables | `D1_SYNC_URL` | `https://t125-roster.<subdomain>.workers.dev/api/sync` |
-| Variables | `OUTPUT_MODE` | `both` at first, then `d1` |
-| Secrets | `D1_SYNC_TOKEN` | the `SYNC_TOKEN` from step 4 |
-
-Note the `/api/sync` on the end of the URL.
-
-### 7. Load it now instead of waiting for the schedule
-
-Either trigger the workflow by hand (Actions tab → the sync workflow → Run
-workflow), or push from your machine:
+The cron runs hourly, but you can trigger the same sync immediately:
 
 ```bash
-cd ..
-D1_SYNC_URL=https://t125-roster.<subdomain>.workers.dev/api/sync \
-D1_SYNC_TOKEN=<your SYNC_TOKEN> \
-python square_orders.py --square-env production --output d1
+curl -X POST https://t125-roster.<subdomain>.workers.dev/api/run-sync \
+  -H "Authorization: Bearer <your SYNC_TOKEN>"
 ```
 
-`--square-env production` matters: the CLI defaults to sandbox, and you do not
-want test scouts in the real roster.
+It replies with what it did:
+
+```json
+{"ok":true,"environment":"production","orders":38,"upserted":41,"skipped":0}
+```
+
+### 7. Let GitHub deploy for you
+
+In GitHub: **Settings → Secrets and variables → Actions → Secrets**.
+
+| Name | Where it comes from |
+| --- | --- |
+| `CLOUDFLARE_API_TOKEN` | Cloudflare dashboard → My Profile → API Tokens → Create Token → **Edit Cloudflare Workers** template |
+| `CLOUDFLARE_ACCOUNT_ID` | Cloudflare dashboard → Workers & Pages, right-hand sidebar |
+
+After that, pushing to `main` runs the tests and deploys if they pass. No
+secrets or data are touched by a deploy.
+
+## The scheduled sync
+
+`[triggers] crons` in `wrangler.toml` runs the sync hourly except 1am-5am CST,
+the same cadence the GitHub Action used to. The handler lives in
+`src/sync.js`: fetch recent orders, resolve the catalog objects their modifiers
+reference, parse, upsert.
+
+Every run writes to `sync_log`, including failures, so the "last synced" line
+in the UI cannot silently freeze on a stale success. Check it with:
+
+```bash
+npx wrangler d1 execute t125-roster --remote \
+  --command "SELECT synced_at, rows_seen, ok, detail FROM sync_log ORDER BY id DESC LIMIT 5"
+```
+
+Live logs while it runs:
+
+```bash
+npx wrangler tail
+```
 
 ## Deploying again later
+
+Push to `main`. Or by hand:
 
 ```bash
 npm run deploy
 ```
 
-Code only. Secrets and data are untouched. If you changed `schema.sql`, run
+Code only -- secrets and data are untouched. If you changed `schema.sql`, run
 `npm run db:init` too.
 
 ## If something is wrong
@@ -125,6 +154,8 @@ Code only. Secrets and data are untouched. If you changed `schema.sql`, run
 | Symptom | Cause |
 | --- | --- |
 | 503, "Worker is not configured. Missing: ..." | that secret is not set -- step 4 |
+| 503 from `/api/run-sync`, "Square is not configured" | `SQUARE_ACCESS_TOKEN` or `SQUARE_LOCATION_ID` not set |
+| `sync_log` shows `ok=0` with `HTTP 401` | the Square token is wrong for `SQUARE_ENVIRONMENT` |
 | "database error: no such table: registrations" | step 3 was skipped, or ran locally |
 | Sync returns 401 | `D1_SYNC_TOKEN` does not match the Worker's `SYNC_TOKEN` |
 | Login page but the password is refused | 10 wrong tries per IP per 15 min; wait, or clear `login_attempts` |
@@ -206,7 +237,8 @@ makes it exact.
 | `GET` | `/api/campouts` | session cookie; returns `starts_at`, `is_past`, `upcoming` |
 | `GET` | `/api/roster?campout=` | session cookie; returns rows + per-patrol headcounts |
 | `GET` | `/api/export.csv?campout=` | session cookie |
-| `POST` | `/api/sync` | `Authorization: Bearer <SYNC_TOKEN>` |
+| `POST` | `/api/sync` | `Authorization: Bearer <SYNC_TOKEN>`; accepts rows from the CLI |
+| `POST` | `/api/run-sync` | `Authorization: Bearer <SYNC_TOKEN>`; runs the Square sync now |
 
 ## Local development
 
@@ -219,10 +251,13 @@ cd worker
 npm install
 
 # 1. Secrets for local only. This file is git-ignored; these values are fake.
+#    Leave the Square ones blank unless you want the cron sync to run locally.
 cat > .dev.vars <<'EOF'
 TROOP_PASSWORD=localdev
 SESSION_SECRET=localdev-session-secret
 SYNC_TOKEN=localdev-sync-token
+SQUARE_ACCESS_TOKEN=
+SQUARE_LOCATION_ID=
 EOF
 
 # 2. Create the local tables

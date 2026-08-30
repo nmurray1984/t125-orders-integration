@@ -26,12 +26,6 @@ class Config:
     # sandbox: hitting production should be something you asked for.
     SQUARE_ENVIRONMENT = os.getenv('SQUARE_ENVIRONMENT', 'sandbox')
 
-    # Google Sheets Configuration
-    GOOGLE_SHEET_ID = os.getenv('GOOGLE_SHEET_ID', '')
-    GOOGLE_CREDENTIALS_JSON = os.getenv('GOOGLE_CREDENTIALS_JSON', '')
-    SHEET_NAME = os.getenv('SHEET_NAME', 'Sheet1')
-    WRITE_MODE = os.getenv('WRITE_MODE', 'overwrite')  # 'overwrite' or 'append'
-
     # Cloudflare D1 Configuration (via the roster Worker)
     D1_SYNC_URL = os.getenv('D1_SYNC_URL', '')
     D1_SYNC_TOKEN = os.getenv('D1_SYNC_TOKEN', '')
@@ -76,19 +70,6 @@ class Config:
             sys.exit(1)
 
         return token, location_id, source
-
-    @classmethod
-    def validate_google_sheets_config(cls):
-        """Validate required Google Sheets configuration"""
-        if not cls.GOOGLE_SHEET_ID:
-            print("Error: GOOGLE_SHEET_ID environment variable is required for Google Sheets output")
-            sys.exit(1)
-        if not cls.GOOGLE_CREDENTIALS_JSON:
-            print("Error: GOOGLE_CREDENTIALS_JSON environment variable is required for Google Sheets output")
-            sys.exit(1)
-        if cls.WRITE_MODE not in ['overwrite', 'append']:
-            print(f"Error: WRITE_MODE must be 'overwrite' or 'append', got '{cls.WRITE_MODE}'")
-            sys.exit(1)
 
     @classmethod
     def validate_d1_config(cls):
