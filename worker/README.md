@@ -145,7 +145,21 @@ Open http://127.0.0.1:8787 and sign in with `localdev`.
 
 ### Using real Square data locally
 
-With `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID` set in `.env`:
+Put your Square credentials in `.env` at the repo root:
+
+```
+SQUARE_ACCESS_TOKEN=your_token
+SQUARE_LOCATION_ID=LRG8TDY17X9VD
+```
+
+Have a look at what Square returns before writing anything -- this touches no
+database:
+
+```bash
+python square_orders.py --output stdout
+```
+
+Then, with `npm run dev` running in `worker/`, load it into the local database:
 
 ```bash
 D1_SYNC_URL=http://127.0.0.1:8787/api/sync \
@@ -153,9 +167,17 @@ D1_SYNC_TOKEN=localdev-sync-token \
 python square_orders.py --output d1
 ```
 
-`Config.validate_d1_config()` normally requires https, so this is the one case
-where you will need to allow http -- either relax that check temporarily or use
-`seed_local.py` instead.
+`D1_SYNC_URL` normally has to be https, since the sync token travels as a
+bearer header. http is accepted only when the host is `localhost`, `127.0.0.1`
+or `::1`, where the request never leaves the machine. A remote http URL is
+still refused.
+
+This writes to your **local** SQLite file under `.wrangler/`, not to
+Cloudflare -- deployed data is only touched by a Worker you have deployed.
+
+Real Square data means real scouts' phone numbers and emergency contacts on
+your laptop. `rm -rf .wrangler` when you are done, or use `seed_local.py`
+instead when you only need to check a layout.
 
 ### "Signed in, but your browser did not keep the session cookie"
 

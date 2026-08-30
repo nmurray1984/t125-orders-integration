@@ -1,5 +1,7 @@
 import os
 import sys
+from urllib.parse import urlparse
+
 from dotenv import load_dotenv
 
 # Load environment variables from .env file
@@ -52,10 +54,25 @@ class Config:
         if not cls.D1_SYNC_URL:
             print("Error: D1_SYNC_URL environment variable is required for D1 output")
             sys.exit(1)
-        if not cls.D1_SYNC_URL.startswith('https://'):
+        if not cls.D1_SYNC_URL.startswith('https://') and not cls.is_local_sync_url():
             print("Error: D1_SYNC_URL must be an https:// URL "
-                  "(the sync token is sent as a bearer header)")
+                  "(the sync token is sent as a bearer header). "
+                  "http is allowed only for a local Worker on localhost.")
             sys.exit(1)
         if not cls.D1_SYNC_TOKEN:
             print("Error: D1_SYNC_TOKEN environment variable is required for D1 output")
             sys.exit(1)
+
+    # `wrangler dev` cannot serve https, so plain http is allowed when the
+    # Worker is on this machine -- the bearer token never crosses a network.
+    LOCAL_HOSTS = frozenset({'localhost', '127.0.0.1', '::1', '[::1]'})
+
+    @classmethod
+    def is_local_sync_url(cls, url=None):
+        """True when D1_SYNC_URL points at a Worker running on this machine."""
+        url = url if url is not None else cls.D1_SYNC_URL
+        try:
+            hostname = urlparse(url).hostname
+        except ValueError:
+            return False
+        return hostname in cls.LOCAL_HOSTS

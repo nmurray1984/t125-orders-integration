@@ -146,6 +146,27 @@ def test_server_error_is_retried():
     ])
 
 
+def test_sync_url_validation():
+    """http is allowed only for a Worker on this machine"""
+    print("\nTesting D1_SYNC_URL host rules...")
+    from config import Config
+
+    accepted = lambda url: url.startswith('https://') or Config.is_local_sync_url(url)
+
+    return all([
+        check("https anywhere is fine",
+              accepted('https://t125-roster.example.workers.dev/api/sync')),
+        check("http on 127.0.0.1 is allowed", accepted('http://127.0.0.1:8787/api/sync')),
+        check("http on localhost is allowed", accepted('http://localhost:8787/api/sync')),
+        check("http on ::1 is allowed", accepted('http://[::1]:8787/api/sync')),
+        check("http on a remote host is refused", not accepted('http://example.com/api/sync')),
+        check("a lookalike host is refused",
+              not accepted('http://127.0.0.1.evil.test/api/sync')),
+        check("localhost in the query string is refused",
+              not accepted('http://evil.test/?x=127.0.0.1')),
+    ])
+
+
 def main():
     print("Running D1 sync tests...")
     print("=" * 60)
@@ -157,6 +178,7 @@ def main():
         test_batching(),
         test_client_error_is_not_retried(),
         test_server_error_is_retried(),
+        test_sync_url_validation(),
     ]
 
     print("\n" + "=" * 60)
