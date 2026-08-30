@@ -6,12 +6,133 @@ from square.environment import SquareEnvironment
 from collections import defaultdict
 from config import Config
 
-client = Square(
-    environment=SquareEnvironment.PRODUCTION,
-    token=Config.SQUARE_ACCESS_TOKEN
-)
-
 FETCH_LIMIT = Config.SQUARE_FETCH_LIMIT
+
+# The Square client is built lazily so --square-env can choose the environment
+# before anything talks to Square. Nothing here should ever reach production
+# just because a module got imported.
+_client = None
+_location_id = None
+
+ENVIRONMENTS = {
+    'sandbox': SquareEnvironment.SANDBOX,
+    'production': SquareEnvironment.PRODUCTION,
+}
+
+
+def configure_square(environment, token, location_id):
+    """Point this module at a Square environment. Returns the client."""
+    global _client, _location_id
+    _client = Square(environment=ENVIRONMENTS[environment], token=token)
+    _location_id = location_id
+    return _client
+
+
+def get_client():
+    """The configured Square client, defaulting to sandbox if never configured."""
+    if _client is None:
+        environment = Config.SQUARE_ENVIRONMENT
+        token, location_id, _ = Config.square_credentials(environment)
+        return configure_square(environment, token, location_id)
+    return _client
+
+
+def get_location_id():
+    return _location_id if _location_id is not None else Config.SQUARE_LOCATION_ID
+
+
+# Square hands out several credential types that all look like opaque strings.
+# Pasting the wrong one is the most common cause of a 401, and the prefix gives
+# it away without us ever printing the secret.
+WRONG_CREDENTIAL_PREFIXES = {
+    'sq0idp-': 'a production Application ID',
+    'sandbox-sq0idb-': 'a sandbox Application ID',
+    'sq0csp-': 'an OAuth Application Secret',
+}
+
+
+def describe_token(token):
+    """Describe a token well enough to debug it, without revealing it."""
+    if not token:
+        return 'empty'
+
+    for prefix, what in WRONG_CREDENTIAL_PREFIXES.items():
+        if token.startswith(prefix):
+            return f"looks like {what}, not an Access Token (starts '{prefix}')"
+
+    if token != token.strip():
+        return 'has leading or trailing whitespace -- check for a stray space or newline'
+    if token.startswith(('"', "'")):
+        return 'starts with a quote -- .env values should not be quoted'
+    if not token.startswith('EAAA'):
+        return f"unexpected format (starts '{token[:4]}...'); Square Access Tokens start 'EAAA'"
+
+    return f"looks like an Access Token ({len(token)} chars)"
+
+
+def describe_api_error(exc):
+    """Summarize a Square API error without dumping every response header."""
+    status = getattr(exc, 'status_code', None)
+    body = getattr(exc, 'body', None)
+
+    details = []
+    if isinstance(body, dict):
+        for error in body.get('errors', []):
+            part = error.get('detail') or error.get('code') or ''
+            if part:
+                details.append(part)
+
+    summary = '; '.join(details) or str(exc)
+    return f"HTTP {status}: {summary}" if status else summary
+
+
+def check_credentials(environment, token, location_id):
+    """
+    Ask Square which locations this token can see.
+
+    Answers the two questions a 401 leaves open: is the token valid, and does
+    the location actually belong to it. Returns True when both hold.
+    """
+    print(f"Token: {describe_token(token)}", file=sys.stderr)
+
+    try:
+        result = get_client().locations.list()
+    except Exception as exc:
+        print(f"Could not list locations: {describe_api_error(exc)}", file=sys.stderr)
+        print(
+            f"\nThe {environment} Access Token was rejected. In the Square "
+            f"Developer Dashboard, open your application, switch to the "
+            f"{environment.title()} tab, and copy the {environment.title()} "
+            f"*Access Token* -- not the Application ID.",
+            file=sys.stderr,
+        )
+        return False
+
+    locations = getattr(result, 'locations', None) or []
+    if not locations:
+        print("Token is valid but can see no locations.", file=sys.stderr)
+        return False
+
+    print(f"\nLocations visible to this token ({len(locations)}):", file=sys.stderr)
+    matched = False
+    for location in locations:
+        marker = ' <-- configured' if location.id == location_id else ''
+        print(f"  {location.id}  {getattr(location, 'name', '')}{marker}", file=sys.stderr)
+        if location.id == location_id:
+            matched = True
+
+    if not matched:
+        location_var = ('SQUARE_SANDBOX_LOCATION_ID' if environment == 'sandbox'
+                        else 'SQUARE_LOCATION_ID')
+        print(
+            f"\nConfigured location {location_id} is not in that list. "
+            f"Set {location_var} to one of the IDs above.",
+            file=sys.stderr,
+        )
+        return False
+
+    print("\nCredentials look good.", file=sys.stderr)
+    return True
 
 def extract_modifier_list_ids(orders):
     """Extract modifier list IDs from orders"""
@@ -37,7 +158,7 @@ def get_modifier_details(catalog_versions_dict):
         unique_object_ids = list(dict.fromkeys(object_ids))
         
         try:
-            result = client.catalog.batch_get(
+            result = get_client().catalog.batch_get(
                 object_ids=unique_object_ids,
                 catalog_version=catalog_version
             )
@@ -70,7 +191,7 @@ def get_modifier_list_details(modifier_list_ids):
     # Make separate API calls for each catalog version
     for catalog_version, object_ids in catalog_versions.items():
         try:
-            result = client.catalog.batch_get(
+            result = get_client().catalog.batch_get(
                 object_ids=object_ids,
                 catalog_version=catalog_version
             )
@@ -91,15 +212,18 @@ def get_modifier_list_details(modifier_list_ids):
 def get_recent_orders():
     """Fetch the most recent orders from Square API"""
     try:
-        result = client.orders.search(
-            location_ids=[Config.SQUARE_LOCATION_ID],
+        result = get_client().orders.search(
+            location_ids=[get_location_id()],
             limit=FETCH_LIMIT
         )
         if hasattr(result, 'errors') and result.errors:
             print(f"API returned errors: {result.errors}")
         return result.orders if hasattr(result, 'orders') and result.orders else []
     except Exception as e:
-        print(f"Error fetching orders: {e}")
+        print(f"Error fetching orders: {describe_api_error(e)}", file=sys.stderr)
+        if getattr(e, 'status_code', None) in (401, 403):
+            print("Run with --check to see which credentials Square accepted.",
+                  file=sys.stderr)
         return []
 
 def extract_order_data(orders, modifier_details):
@@ -112,16 +236,25 @@ def extract_order_data(orders, modifier_details):
             total_money = f"{order.total_money.amount} {order.total_money.currency}"
         else:
             total_money = "0 USD"
+
+        # Square returns an RFC3339 string; normalize to str so it survives JSON encoding
+        order_created_at = getattr(order, 'created_at', None) or ''
+        if order_created_at and not isinstance(order_created_at, str):
+            order_created_at = str(order_created_at)
         
         if hasattr(order, 'line_items') and order.line_items:
             for line_item in order.line_items:
                 line_item_name = line_item.name
                 
-                # Initialize row with basic info
+                # Initialize row. line_item_uid makes (order_id, line_item_uid)
+                # unique: one order can register several people.
                 row = {
                     'order_id': order_id,
+                    'line_item_uid': getattr(line_item, 'uid', '') or '',
+                    'order_created_at': order_created_at,
                     'total_money': total_money,
                     'line_item_name': line_item_name,
+                    'variation_name': getattr(line_item, 'variation_name', '') or '',
                     'scout_name': '',
                     'scouter_name': '',
                     'rank': '',
@@ -299,20 +432,53 @@ def main():
     """Main function to fetch and display recent orders with modifier details"""
     # Parse command line arguments
     parser = argparse.ArgumentParser(
-        description='Fetch Square orders and output to CSV or Google Sheets'
+        description='Fetch Square orders and print them, or push them to the roster Worker'
+    )
+    parser.add_argument(
+        '--square-env',
+        choices=['sandbox', 'production'],
+        default=Config.SQUARE_ENVIRONMENT,
+        help='Which Square environment to read from. Defaults to SQUARE_ENVIRONMENT, '
+             'or sandbox when that is unset -- production is always deliberate.'
+    )
+    parser.add_argument(
+        '--check',
+        action='store_true',
+        help='Verify the Square credentials and list the locations they can see, '
+             'then exit without fetching orders.'
     )
     parser.add_argument(
         '--output',
-        choices=['stdout', 'sheets'],
+        choices=['stdout', 'd1'],
         default='stdout',
-        help='Output mode: stdout (CSV to console) or sheets (Google Sheets)'
+        help='Output mode: stdout (CSV to console) or d1 (push to the roster '
+             'Worker). The scheduled sync runs on Cloudflare Cron; this CLI is '
+             'for inspecting Square data and for manual backfills.'
     )
     args = parser.parse_args()
 
     # Validate configuration based on output mode
-    if args.output == 'sheets':
-        Config.validate_google_sheets_config()
-    Config.validate_square_config()
+    if args.output == 'd1':
+        Config.validate_d1_config()
+
+    token, location_id, source = Config.validate_square_config(args.square_env)
+    configure_square(args.square_env, token, location_id)
+
+    # Say which environment out loud. Confusing the two is the whole risk here.
+    print(f"Square environment: {args.square_env} "
+          f"(token from {source}, location {location_id})", file=sys.stderr)
+
+    if args.check:
+        sys.exit(0 if check_credentials(args.square_env, token, location_id) else 1)
+
+    # Sandbox registrations are fake. Letting them into the deployed roster
+    # would mix invented scouts in with real ones.
+    if (args.square_env == 'sandbox'
+            and args.output == 'd1'
+            and not Config.is_local_sync_url()):
+        print("WARNING: syncing SANDBOX data to a non-local D1 "
+              f"({Config.D1_SYNC_URL}). Test data will land in the real roster.",
+              file=sys.stderr)
 
     print("Fetching recent orders from Square API...", file=sys.stderr)
     orders = get_recent_orders()
@@ -333,15 +499,12 @@ def main():
     # Extract structured data for table
     order_data = extract_order_data(orders, modifier_details)
 
-    # Output based on mode
     if args.output == 'stdout':
         write_csv_to_stdout(order_data)
-    elif args.output == 'sheets':
-        from google_sheets import write_to_google_sheet, log_last_update
-        success = write_to_google_sheet(order_data)
-        if not success:
+    elif args.output == 'd1':
+        from d1_sync import sync_to_d1
+        if not sync_to_d1(order_data):
             sys.exit(1)
-        log_last_update()
 
 if __name__ == "__main__":
     main()

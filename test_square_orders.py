@@ -186,4 +186,4 @@ def main():
     return passed_tests == total_tests
 
 if __name__ == "__main__":
-    main()
+    sys.exit(0 if main() else 1)

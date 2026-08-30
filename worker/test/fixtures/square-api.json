@@ -1,0 +1,216 @@
+{
+  "catalog_objects": [
+    {
+      "id": "MODIFIER_1",
+      "modifier_data": {
+        "name": "Scout Name: John Smith"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_2",
+      "modifier_data": {
+        "name": "Rank: Tenderfoot"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_3",
+      "modifier_data": {
+        "name": "Scout Name: Jane Doe"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_4",
+      "modifier_data": {
+        "name": "Scouter Name: Bob Doe"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_5",
+      "modifier_data": {
+        "name": "Emergency Contact: Alice Doe"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_6",
+      "modifier_data": {
+        "name": "Patrol: Eagle Patrol"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_7",
+      "modifier_data": {
+        "name": "Will you travel with the troop to the campout?: Yes"
+      },
+      "type": "MODIFIER",
+      "version": 1
+    },
+    {
+      "id": "MODIFIER_8",
+      "modifier_data": {
+        "modifier_list_id": "MODIFIER_LIST_1",
+        "name": "Special Accommodation"
+      },
+      "type": "MODIFIER",
+      "version": 2
+    },
+    {
+      "id": "MODIFIER_LIST_1",
+      "modifier_list_data": {
+        "name": "Scout Information"
+      },
+      "type": "MODIFIER_LIST",
+      "version": 1
+    }
+  ],
+  "orders": [
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "id": "ORDER_1",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 1,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_1",
+              "name": "Scout Name: John Smith",
+              "uid": "MODIFIER_1_1_1"
+            },
+            {
+              "catalog_object_id": "MODIFIER_2",
+              "name": "Rank",
+              "uid": "MODIFIER_1_1_2"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_1_1",
+          "variation_name": "Basic Registration"
+        }
+      ],
+      "total_money": {
+        "amount": 15000,
+        "currency": "USD"
+      }
+    },
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "id": "ORDER_2",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 1,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_3",
+              "name": "Scout Name: Jane Doe",
+              "uid": "MODIFIER_2_1_1"
+            },
+            {
+              "catalog_object_id": "MODIFIER_4",
+              "name": "Scouter Name: Bob Doe",
+              "uid": "MODIFIER_2_1_2"
+            },
+            {
+              "catalog_object_id": "MODIFIER_5",
+              "name": "Emergency Contact: Alice Doe",
+              "uid": "MODIFIER_2_1_3"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_2_1",
+          "variation_name": "Premium Registration"
+        }
+      ],
+      "total_money": {
+        "amount": 25000,
+        "currency": "USD"
+      }
+    },
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "id": "ORDER_3",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 1,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_6",
+              "name": "Patrol",
+              "uid": "MODIFIER_3_1_1"
+            },
+            {
+              "catalog_object_id": "MODIFIER_7",
+              "name": "Will you travel with the troop to the campout?",
+              "uid": "MODIFIER_3_1_2"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_3_1",
+          "variation_name": "Basic Registration"
+        }
+      ],
+      "total_money": {
+        "amount": 10000,
+        "currency": "USD"
+      }
+    },
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "id": "ORDER_4",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 2,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_8",
+              "name": "Basic Modifier",
+              "uid": "MODIFIER_4_1_1"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_4_1",
+          "variation_name": "Standard Registration"
+        }
+      ],
+      "total_money": {
+        "amount": 20000,
+        "currency": "USD"
+      }
+    },
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "id": "ORDER_REFUNDED",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 1,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_1",
+              "name": "Scout Name: Refunded Scout",
+              "uid": "MODIFIER_R_1_1"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_R_1",
+          "variation_name": "Basic Registration"
+        }
+      ],
+      "total_money": null
+    }
+  ]
+}

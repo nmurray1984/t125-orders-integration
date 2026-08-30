@@ -1,0 +1,74 @@
+name: Test and Deploy
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Python dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Python tests
+        run: |
+          python test_square_orders.py
+          python test_d1_sync.py
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Worker tests
+        working-directory: worker
+        run: npm test
+
+      - name: The ported parser still matches the Python one
+        run: |
+          python scripts/make_worker_fixture.py
+          git diff --exit-code worker/test/fixtures/ \
+            || (echo "::error::Regenerated fixtures differ from the committed ones. \
+                      If the parsing rules changed on purpose, commit the new fixtures." && exit 1)
+
+  deploy:
+    needs: test
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: worker/package-lock.json
+
+      - name: Install Worker dependencies
+        working-directory: worker
+        run: npm ci
+
+      - name: Deploy to Cloudflare
+        working-directory: worker
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+          CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+        # npm run (not npx) so the predeploy preflight runs and fails fast
+        # on a wrangler.toml that still has the placeholder database_id.
+        run: npm run deploy

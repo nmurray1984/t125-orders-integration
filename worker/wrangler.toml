@@ -1,0 +1,36 @@
+name = "t125-roster"
+main = "src/index.js"
+# Kept conservative on purpose: this Worker only needs crypto.subtle, D1 and
+# the assets binding, all long-stable. A date newer than your installed
+# wrangler supports makes the runtime refuse to start.
+compatibility_date = "2024-09-23"
+
+# Static front end. Assets are served directly for non-/api/ paths.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+# Deep links like /c/Fall%20Camporee have no file behind them; serve the app
+# shell and let the client route.
+not_found_handling = "single-page-application"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "t125-roster"
+# Replace with the id printed by: wrangler d1 create t125-roster
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+# Hourly except 1am-5am CST, matching the schedule the GitHub Action ran on.
+[triggers]
+crons = ["0 0-5,12-23 * * *"]
+
+[vars]
+SESSION_DAYS = "30"
+SQUARE_ENVIRONMENT = "production"
+SQUARE_FETCH_LIMIT = "70"
+
+# Secrets are NOT set here. Set them once with:
+#   wrangler secret put TROOP_PASSWORD
+#   wrangler secret put SESSION_SECRET
+#   wrangler secret put SYNC_TOKEN
+#   wrangler secret put SQUARE_ACCESS_TOKEN
+#   wrangler secret put SQUARE_LOCATION_ID
