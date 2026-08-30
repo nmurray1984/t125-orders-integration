@@ -130,6 +130,23 @@ Clear it with:
 npx wrangler d1 execute t125-roster --local --command "DELETE FROM login_attempts"
 ```
 
+### "This Worker requires compatibility date ..."
+
+```
+✘ [ERROR] service core:user:t125-roster: This Worker requires compatibility
+  date "2026-08-01", but the newest date supported by this server binary is ...
+```
+
+Your wrangler is older than the `compatibility_date` in `wrangler.toml`. The
+date is deliberately conservative, so if you still hit this, either lower it to
+a date your wrangler supports or upgrade:
+
+```bash
+npm install --save-dev wrangler@latest
+```
+
+Check what you have with `npx wrangler --version`.
+
 ### Resetting
 
 ```bash

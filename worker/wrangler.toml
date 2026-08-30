@@ -1,6 +1,9 @@
 name = "t125-roster"
 main = "src/index.js"
-compatibility_date = "2026-08-01"
+# Kept conservative on purpose: this Worker only needs crypto.subtle, D1 and
+# the assets binding, all long-stable. A date newer than your installed
+# wrangler supports makes the runtime refuse to start.
+compatibility_date = "2024-09-23"
 
 # Static front end. Assets are served directly for non-/api/ paths.
 [assets]
