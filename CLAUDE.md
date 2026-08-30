@@ -102,6 +102,12 @@ npm run dev             # wrangler dev, reads secrets from .dev.vars
 production client. The GitHub Actions sync passes `--square-env production`
 explicitly -- changing the default must not silently redirect it.
 
+`--check` verifies credentials by listing the locations a token can see, and
+`describe_token()` names common paste errors (Application ID, OAuth secret, stray
+whitespace, quoted value) without ever printing the secret. `describe_api_error()`
+summarizes Square failures as `HTTP <status>: <detail>` instead of dumping every
+response header.
+
 Sandbox and production have separate tokens *and* separate location IDs
 (`SQUARE_SANDBOX_ACCESS_TOKEN` / `SQUARE_SANDBOX_LOCATION_ID`); sandbox falls back
 to the generic vars when the sandbox-specific ones are unset. Every run prints the

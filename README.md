@@ -72,6 +72,14 @@ python square_orders.py --square-env production --output d1
 over it. The scheduled GitHub Actions sync passes `--square-env production`
 explicitly, so flipping the local default never affects it.
 
+Check credentials before doing anything else — this lists the locations your
+token can actually see, which answers both "is the token right" and "is the
+location ID right" at once:
+
+```bash
+python square_orders.py --square-env sandbox --check
+```
+
 Every run prints which environment, credential source and location it used, so
 you are never guessing. Sandbox has its own token *and* its own location ID —
 they are not interchangeable. Put them in `SQUARE_SANDBOX_ACCESS_TOKEN` and

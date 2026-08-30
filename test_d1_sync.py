@@ -214,6 +214,44 @@ def test_square_environment_selection():
     return all(results)
 
 
+def test_token_description():
+    """Token diagnostics must name the problem without revealing the secret"""
+    print("\nTesting credential diagnostics...")
+    from square_orders import describe_token, describe_api_error
+
+    secret = 'EAAAsupersecrettokenvalue1234567890'
+    described = describe_token(secret)
+
+    results = [
+        check("a plausible token is accepted", 'Access Token' in described),
+        check("the token itself is never echoed", secret not in described),
+        check("a sandbox Application ID is called out",
+              'Application ID' in describe_token('sandbox-sq0idb-abc')),
+        check("a production Application ID is called out",
+              'Application ID' in describe_token('sq0idp-abc')),
+        check("an OAuth secret is called out",
+              'Secret' in describe_token('sq0csp-abc')),
+        check("stray whitespace is called out",
+              'whitespace' in describe_token(' EAAAtoken ')),
+        check("a quoted value is called out",
+              'quote' in describe_token('"EAAAtoken"')),
+        check("an empty token is called out", describe_token('') == 'empty'),
+    ]
+
+    class FakeError(Exception):
+        status_code = 401
+        body = {'errors': [{'category': 'AUTHENTICATION_ERROR',
+                            'code': 'UNAUTHORIZED',
+                            'detail': 'This request could not be authorized.'}]}
+
+    summary = describe_api_error(FakeError())
+    results.append(check("API errors summarize status and detail",
+                         summary == 'HTTP 401: This request could not be authorized.'))
+    results.append(check("API errors do not dump headers", 'cf-ray' not in summary))
+
+    return all(results)
+
+
 def main():
     print("Running D1 sync tests...")
     print("=" * 60)
@@ -227,6 +265,7 @@ def main():
         test_server_error_is_retried(),
         test_sync_url_validation(),
         test_square_environment_selection(),
+        test_token_description(),
     ]
 
     print("\n" + "=" * 60)
