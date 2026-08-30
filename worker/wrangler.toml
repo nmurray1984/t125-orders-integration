@@ -17,7 +17,7 @@ not_found_handling = "single-page-application"
 binding = "DB"
 database_name = "t125-roster"
 # Replace with the id printed by: wrangler d1 create t125-roster
-database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+database_id = "a2b338b6-1196-4ef1-ad89-4f398294f9e6"
 
 # Hourly except 1am-5am CST, matching the schedule the GitHub Action ran on.
 [triggers]
