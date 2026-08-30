@@ -20,51 +20,80 @@
   </form>
 </section>
 
-<section id="app" hidden>
+<main id="app" hidden>
   <header class="bar">
-    <div class="bar-main">
-      <h1>Campout Roster</h1>
+    <div>
+      <p class="eyebrow" id="eyebrow"></p>
+      <h1 id="campout-title">Campout Roster</h1>
       <p id="sync-note" class="muted"></p>
     </div>
     <button type="button" id="logout" class="ghost">Sign out</button>
   </header>
 
-  <div class="controls">
+  <nav class="switcher">
     <label class="field">
-      <span>Campout</span>
+      <span>Viewing</span>
       <select id="campout"></select>
     </label>
-    <label class="field grow">
-      <span>Search</span>
-      <input id="search" type="search" placeholder="Name, patrol, rank, phone…" autocomplete="off">
-    </label>
-    <div class="actions">
-      <a id="export" class="button" href="/api/export.csv" download>Download CSV</a>
-      <button type="button" id="print" class="ghost">Print</button>
+  </nav>
+
+  <section class="totals" aria-labelledby="totals-heading">
+    <h2 id="totals-heading" class="section-heading">Headcount by patrol</h2>
+    <div class="totals-grid">
+      <div class="hero">
+        <p class="hero-value" id="hero-total">0</p>
+        <p class="hero-label">Total signed up</p>
+      </div>
+      <ul class="tiles" id="patrol-tiles"></ul>
     </div>
-  </div>
+  </section>
 
-  <p id="summary" class="summary" aria-live="polite"></p>
+  <section aria-labelledby="roster-heading">
+    <div class="roster-head">
+      <h2 id="roster-heading" class="section-heading">Who's going</h2>
+      <div class="controls">
+        <label class="field grow">
+          <span>Search</span>
+          <input id="search" type="search" placeholder="Name, patrol, rank, phone…" autocomplete="off">
+        </label>
+        <label class="field">
+          <span>Sort by</span>
+          <select id="sort">
+            <option value="name">Name (A–Z)</option>
+            <option value="patrol">Patrol, then name</option>
+            <option value="rank">Rank, then name</option>
+            <option value="recent">Most recent signup</option>
+          </select>
+        </label>
+        <div class="actions">
+          <a id="export" class="button" href="/api/export.csv" download>Download CSV</a>
+          <button type="button" id="print" class="ghost">Print</button>
+        </div>
+      </div>
+    </div>
 
-  <div class="table-wrap">
-    <table id="roster">
-      <thead>
-        <tr>
-          <th scope="col">Name</th>
-          <th scope="col">Rank</th>
-          <th scope="col">Patrol</th>
-          <th scope="col">Cell</th>
-          <th scope="col">Emergency contact</th>
-          <th scope="col">Emergency phone</th>
-          <th scope="col">Travels w/ troop</th>
-        </tr>
-      </thead>
-      <tbody id="roster-body"></tbody>
-    </table>
-  </div>
+    <p id="summary" class="summary" aria-live="polite"></p>
 
-  <p id="empty" class="empty" hidden>No registrations match.</p>
-</section>
+    <div class="table-wrap">
+      <table id="roster">
+        <thead>
+          <tr>
+            <th scope="col">Name</th>
+            <th scope="col">Rank</th>
+            <th scope="col">Patrol</th>
+            <th scope="col">Cell</th>
+            <th scope="col">Emergency contact</th>
+            <th scope="col">Emergency phone</th>
+            <th scope="col">Travels w/ troop</th>
+          </tr>
+        </thead>
+        <tbody id="roster-body"></tbody>
+      </table>
+    </div>
+
+    <p id="empty" class="empty" hidden>No registrations match.</p>
+  </section>
+</main>
 
 <script src="/app.js"></script>
 </body>

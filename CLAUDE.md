@@ -135,6 +135,12 @@ captures `line_item.uid` for this reason.
 assumes each campout is a distinct Square catalog item. If a single item is ever
 reused across campouts, partition on `order_created_at` instead.
 
+**Campout dates** (`worker/src/campouts.js`): Square carries no campout date, so
+a date is parsed out of the campout name when present (ISO, `Nov 14`, `11/14`,
+`November 2026`), with the year inferred as the nearest when omitted. The soonest
+future campout is flagged `upcoming` and is what `/` opens on. With no parseable
+dates anywhere it falls back to the campout with the most recent signup activity.
+
 **Upsert semantics**: `first_seen_at` is preserved on conflict; every other column
 plus `synced_at` is overwritten. Syncs never delete, so the rolling Square fetch
 window cannot drop history.

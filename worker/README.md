@@ -62,6 +62,43 @@ That takes effect immediately for new sign-ins, but **existing cookies stay
 valid for up to 30 days**. To force everyone out — someone leaves the troop,
 say — rotate `SESSION_SECRET` too, which invalidates every session instantly.
 
+## Pages
+
+Each campout has its own URL, so a page can be bookmarked or texted to another
+leader:
+
+| Path | Shows |
+| --- | --- |
+| `/` | redirects to the upcoming campout |
+| `/c/<campout name>` | that campout |
+| `/c/all` | every campout at once |
+
+The page leads with a headcount: one hero total plus a tile per patrol, for
+meal planning. Below that is the roster, alphabetical by default and sortable
+by patrol, rank, or signup date. On a phone each registration becomes a card
+with the name and tags (rank, patrol, and an "Own transport" flag) leading.
+
+### How "upcoming" is decided
+
+Square does not tell us when a campout happens -- only the catalog item name
+and when each order was paid. So `src/campouts.js` reads a date out of the
+name where there is one:
+
+| Name | Reads as |
+| --- | --- |
+| `Fall Camporee - Nov 14-16` | Nov 14, year inferred as the nearest |
+| `Winter Klondike Jan 9, 2027` | Jan 9 2027 |
+| `2026-11-14 Klondike` | Nov 14 2026 |
+| `Camporee 11/14` | Nov 14, year inferred |
+| `November 2026 Campout` | Nov 1 2026 |
+| `Caving Trip` | no date |
+
+The soonest campout still in the future is the upcoming one. **When no name
+has a parseable date, it falls back to whichever campout has the most recent
+signup activity** -- the one people are paying for now is almost always the
+next one. That fallback is a guess; naming campouts with a date in Square
+makes it exact.
+
 ## Endpoints
 
 | Method | Path | Auth |
@@ -69,8 +106,8 @@ say — rotate `SESSION_SECRET` too, which invalidates every session instantly.
 | `POST` | `/api/login` | password in body, rate limited per IP |
 | `POST` | `/api/logout` | — |
 | `GET` | `/api/session` | — (reports whether the cookie is valid) |
-| `GET` | `/api/campouts` | session cookie |
-| `GET` | `/api/roster?campout=` | session cookie |
+| `GET` | `/api/campouts` | session cookie; returns `starts_at`, `is_past`, `upcoming` |
+| `GET` | `/api/roster?campout=` | session cookie; returns rows + per-patrol headcounts |
 | `GET` | `/api/export.csv?campout=` | session cookie |
 | `POST` | `/api/sync` | `Authorization: Bearer <SYNC_TOKEN>` |
 

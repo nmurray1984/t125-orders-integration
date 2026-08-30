@@ -10,6 +10,7 @@ import {
   passwordMatches,
   recordFailedLogin,
 } from './auth.js';
+import { annotateCampouts } from './campouts.js';
 import { ROSTER_COLUMNS, toCsv } from './csv.js';
 
 const ALL_CAMPOUTS = '__all__';
@@ -160,11 +161,30 @@ async function handleCampouts(env) {
             MAX(order_created_at) AS last_order_at
      FROM registrations
      WHERE campout <> ''
-     GROUP BY campout
-     ORDER BY last_order_at DESC, campout ASC`,
+     GROUP BY campout`,
   ).all();
 
-  return json({ campouts: results ?? [], last_synced_at: await lastSyncedAt(env) });
+  return json({
+    campouts: annotateCampouts(results ?? []),
+    last_synced_at: await lastSyncedAt(env),
+  });
+}
+
+/** Headcount per patrol, for meal planning. */
+async function patrolCounts(env, campout) {
+  if (!campout || campout === ALL_CAMPOUTS) {
+    const { results } = await env.DB.prepare(
+      `SELECT patrol, COUNT(*) AS headcount FROM registrations
+       GROUP BY patrol ORDER BY headcount DESC, patrol ASC`,
+    ).all();
+    return results ?? [];
+  }
+
+  const { results } = await env.DB.prepare(
+    `SELECT patrol, COUNT(*) AS headcount FROM registrations WHERE campout = ?1
+     GROUP BY patrol ORDER BY headcount DESC, patrol ASC`,
+  ).bind(campout).all();
+  return results ?? [];
 }
 
 async function rosterRows(env, campout) {
@@ -184,9 +204,16 @@ async function rosterRows(env, campout) {
 
 async function handleRoster(url, env) {
   const campout = url.searchParams.get('campout');
+  const [rows, patrols] = await Promise.all([
+    rosterRows(env, campout),
+    patrolCounts(env, campout),
+  ]);
+
   return json({
     campout: campout ?? ALL_CAMPOUTS,
-    rows: await rosterRows(env, campout),
+    rows,
+    patrols,
+    headcount: rows.length,
     last_synced_at: await lastSyncedAt(env),
   });
 }

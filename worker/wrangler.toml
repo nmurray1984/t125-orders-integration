@@ -9,6 +9,9 @@ compatibility_date = "2024-09-23"
 [assets]
 directory = "./public"
 binding = "ASSETS"
+# Deep links like /c/Fall%20Camporee have no file behind them; serve the app
+# shell and let the client route.
+not_found_handling = "single-page-application"
 
 [[d1_databases]]
 binding = "DB"

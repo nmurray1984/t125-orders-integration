@@ -2,12 +2,16 @@
   color-scheme: light dark;
   --bg: #f6f7f9;
   --surface: #ffffff;
+  --surface-sunken: #eef1f4;
   --border: #d9dee5;
   --text: #1a1f26;
   --muted: #5d6773;
   --accent: #14532d;
+  --accent-soft: #e4efe8;
   --accent-text: #ffffff;
   --error: #b42318;
+  --warn-bg: #fdf0e6;
+  --warn-text: #8a4b10;
   --row-alt: #fafbfc;
 }
 
@@ -15,12 +19,16 @@
   :root {
     --bg: #14181d;
     --surface: #1c2126;
+    --surface-sunken: #232a31;
     --border: #333b44;
     --text: #e8ecf1;
     --muted: #9aa5b1;
     --accent: #3f9c62;
+    --accent-soft: #1e3128;
     --accent-text: #0d1114;
     --error: #ff7b72;
+    --warn-bg: #3a2a18;
+    --warn-text: #e5b483;
     --row-alt: #21272d;
   }
 }
@@ -32,24 +40,39 @@
 [hidden] { display: none !important; }
 
 body {
-  margin: 0;
+  margin: 0 auto;
   padding: 1.25rem;
+  max-width: 72rem;
   background: var(--bg);
   color: var(--text);
   font: 15px/1.5 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
 }
 
-h1 { font-size: 1.35rem; margin: 0 0 .25rem; }
-.muted { color: var(--muted); font-size: .875rem; margin: 0; }
+h1 { font-size: 1.6rem; margin: 0 0 .2rem; line-height: 1.2; }
+.muted { color: var(--muted); font-size: .85rem; margin: 0; }
 .error { color: var(--error); font-size: .875rem; }
+
+.eyebrow {
+  margin: 0 0 .15rem;
+  font-size: .75rem;
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: uppercase;
+  color: var(--accent);
+}
+
+.section-heading {
+  font-size: .8rem;
+  font-weight: 700;
+  letter-spacing: .05em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin: 0 0 .6rem;
+}
 
 /* --- Login ---------------------------------------------------------- */
 
-.gate {
-  min-height: 80vh;
-  display: grid;
-  place-items: center;
-}
+.gate { min-height: 80vh; display: grid; place-items: center; }
 
 .card {
   background: var(--surface);
@@ -81,6 +104,7 @@ input:focus-visible, select:focus-visible, button:focus-visible, a:focus-visible
 button, .button {
   font: inherit;
   font-weight: 600;
+  white-space: nowrap;
   padding: .55rem 1rem;
   border-radius: 8px;
   border: 1px solid transparent;
@@ -93,12 +117,7 @@ button, .button {
 }
 
 button[disabled] { opacity: .6; cursor: progress; }
-
-.ghost {
-  background: transparent;
-  color: var(--text);
-  border-color: var(--border);
-}
+.ghost { background: transparent; color: var(--text); border-color: var(--border); }
 
 /* --- App shell ------------------------------------------------------ */
 
@@ -107,23 +126,110 @@ button[disabled] { opacity: .6; cursor: progress; }
   align-items: flex-start;
   justify-content: space-between;
   gap: 1rem;
-  margin-bottom: 1rem;
+  margin-bottom: .9rem;
 }
+
+.switcher { margin-bottom: 1.25rem; }
+.switcher select { max-width: 26rem; }
+
+.field { display: grid; gap: .25rem; font-size: .75rem; font-weight: 700; color: var(--muted); }
+.field.grow { flex: 1 1 13rem; }
+.field span { letter-spacing: .04em; text-transform: uppercase; }
+
+/* --- Headcount: hero + patrol tiles --------------------------------- */
+
+.totals { margin-bottom: 1.75rem; }
+
+.totals-grid {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  align-items: stretch;
+}
+
+.hero {
+  background: var(--accent-soft);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: .85rem 1.4rem;
+  min-width: 9.5rem;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.hero-value {
+  margin: 0;
+  font-size: 3rem;
+  font-weight: 600;
+  line-height: 1;
+  color: var(--accent);
+}
+
+.hero-label {
+  margin: .3rem 0 0;
+  font-size: .8rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+
+.tiles {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: .75rem;
+  flex: 1;
+}
+
+.tile {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: .85rem 1.1rem;
+  min-width: 7rem;
+  flex: 1 1 7rem;
+}
+
+.tile-value { margin: 0; font-size: 1.75rem; font-weight: 600; line-height: 1.1; }
+.tile-label { margin: .15rem 0 0; font-size: .8rem; font-weight: 600; color: var(--muted); }
+
+/* --- Roster controls ------------------------------------------------ */
+
+.roster-head { margin-bottom: .6rem; }
 
 .controls {
   display: flex;
   flex-wrap: wrap;
   gap: .75rem;
   align-items: end;
-  margin-bottom: .75rem;
 }
 
-.field { display: grid; gap: .25rem; font-size: .8rem; font-weight: 600; color: var(--muted); }
-.field.grow { flex: 1 1 14rem; }
 .actions { display: flex; gap: .5rem; margin-left: auto; }
-
-.summary { font-size: .875rem; color: var(--muted); margin: 0 0 .75rem; }
+.summary { font-size: .85rem; color: var(--muted); margin: 0 0 .75rem; }
 .empty { text-align: center; color: var(--muted); padding: 2rem 0; }
+
+/* --- Tags ------------------------------------------------------------ */
+
+.tags { display: none; flex-wrap: wrap; gap: .3rem; }
+
+.tag {
+  display: inline-block;
+  font-size: .7rem;
+  font-weight: 700;
+  letter-spacing: .02em;
+  padding: .15rem .5rem;
+  border-radius: 999px;
+  background: var(--surface-sunken);
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.tag-rank { background: var(--accent-soft); color: var(--accent); }
+.tag-patrol { background: var(--surface-sunken); color: var(--text); }
+.tag-adult { background: var(--surface-sunken); color: var(--text); }
+.tag-warn { background: var(--warn-bg); color: var(--warn-text); }
 
 /* --- Table ---------------------------------------------------------- */
 
@@ -136,47 +242,81 @@ button[disabled] { opacity: .6; cursor: progress; }
 
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--border); }
-th { font-size: .75rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
+th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
 tbody tr:nth-child(even) { background: var(--row-alt); }
 tbody tr:last-child td { border-bottom: none; }
 td a { color: inherit; }
+.person-name { font-weight: 600; }
 
-/* Stack the table into labelled cards on phones. */
-@media (max-width: 40rem) {
-  .table-wrap { border: none; background: transparent; overflow: visible; }
-  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
-  tbody tr {
-    display: grid;
-    gap: .15rem;
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: 10px;
-    padding: .6rem .75rem;
-    margin-bottom: .6rem;
-  }
-  tbody tr:nth-child(even) { background: var(--surface); }
-  td { border: none; padding: 0; display: flex; gap: .5rem; }
-  td::before {
-    content: attr(data-label) ":";
-    font-size: .75rem;
-    font-weight: 600;
-    color: var(--muted);
-    min-width: 9rem;
-  }
-  td:first-child { font-weight: 700; font-size: 1rem; }
-  td:first-child::before { content: none; }
-  /* A label with nothing after it is just noise on a phone. */
-  td[data-empty]:not(:first-child) { display: none; }
+/* --- Phones: each signup becomes a card ----------------------------- */
+
+@media (max-width: 46rem) {
+  body { padding: 1rem .85rem; }
+  h1 { font-size: 1.35rem; }
+  .bar { gap: .5rem; }
   .actions { margin-left: 0; width: 100%; }
   .actions > * { flex: 1; }
+  .field.grow { flex-basis: 100%; }
+  .switcher select, .switcher .field { max-width: none; }
+
+  .hero { flex: 1 1 100%; align-items: flex-start; }
+  .tile { flex: 1 1 calc(50% - .75rem); min-width: 0; }
+
+  .table-wrap { border: none; background: transparent; overflow: visible; }
+  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+  tbody tr {
+    display: block;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: .8rem .9rem;
+    margin-bottom: .7rem;
+  }
+  tbody tr:nth-child(even) { background: var(--surface); }
+
+  td { border: none; padding: 0; display: flex; gap: .6rem; align-items: baseline; }
+  td::before {
+    content: attr(data-label);
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--muted);
+    min-width: 7.5rem;
+    flex-shrink: 0;
+  }
+  td + td { margin-top: .3rem; }
+  td[data-empty]:not(:first-child) { display: none; }
+
+  /* Name block leads the card: big name, then tags, then the detail rows. */
+  td:first-child {
+    display: block;
+    margin-bottom: .55rem;
+    padding-bottom: .55rem;
+    border-bottom: 1px solid var(--border);
+  }
+  td:first-child::before { content: none; }
+  .person-name { font-size: 1.1rem; font-weight: 700; display: block; }
+  .tags { display: flex; margin-top: .35rem; }
+
+  /* Rank and patrol already read as tags above; don't repeat them.
+     "Travels w/ troop: Yes" is the expected case on nearly every card -- the
+     "Own transport" tag calls out the exception, so the row is just noise. */
+  td:nth-child(2), td:nth-child(3), td:nth-child(7) { display: none; }
+  td a { font-weight: 600; }
+
+  #logout { padding: .45rem .7rem; font-size: .85rem; align-self: start; }
 }
 
 /* --- Print: a roster you can carry to the campsite ------------------- */
 
 @media print {
-  body { padding: 0; background: #fff; color: #000; }
-  .controls, .bar button, #empty { display: none !important; }
+  body { padding: 0; background: #fff; color: #000; max-width: none; }
+  .switcher, .controls, .bar button, #empty { display: none !important; }
   .table-wrap { border: none; }
+  .tags { display: none; }
+  .hero, .tile { border: 1px solid #999; }
   thead { display: table-header-group; }
   tbody tr { break-inside: avoid; }
   th, td { border-bottom: 1px solid #999; font-size: 11px; padding: .3rem .4rem; }

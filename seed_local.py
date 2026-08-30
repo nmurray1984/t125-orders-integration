@@ -20,10 +20,13 @@ DEFAULT_TOKEN = 'localdev-sync-token'
 PATROLS = ['Eagle', 'Hawk', 'Cobra', 'Rocking Chair']
 RANKS = ['Scout', 'Tenderfoot', 'Second Class', 'First Class', 'Star', 'Life', 'Eagle']
 
+# Names carry dates so the "upcoming campout" logic has something to read.
+# One past, three future, relative to a late-August "today".
 CAMPOUTS = [
-    ('Fall Camporee', '2026-09-12T14:30:00Z', 9),
-    ('Caving Trip', '2026-10-03T09:15:00Z', 6),
-    ('Winter Klondike', '2026-11-21T18:45:00Z', 11),
+    ('Spring Camporee Apr 17', '2026-03-20T14:30:00Z', 8),
+    ('Fall Camporee Sep 18', '2026-08-25T14:30:00Z', 9),
+    ('Caving Trip Oct 23', '2026-08-28T09:15:00Z', 6),
+    ('Winter Klondike Jan 15', '2026-08-29T18:45:00Z', 11),
 ]
 
 FIRST = ['Avery', 'Blake', 'Casey', 'Devon', 'Emerson', 'Finley', 'Harper',
