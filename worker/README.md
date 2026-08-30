@@ -38,10 +38,14 @@ skipping it produces `Invalid property: databaseId => Invalid uuid`, which does
 not obviously mean "you missed a step". `npm run db:init` and `npm run deploy`
 both refuse to run until it is filled in.
 
-**Commit that change.** The id is not a secret -- it means nothing without your
-account credentials -- and GitHub Actions deploys from the committed
-`wrangler.toml`, so a database_id that only exists on your laptop makes every
-CI deploy fail.
+**Commit that change.** It has to be a literal in the file: wrangler does not
+substitute environment variables into its config, so `${D1_DATABASE_ID}` stays
+a literal string rather than being resolved. GitHub Actions deploys from the
+committed `wrangler.toml`, so an id that only exists on your laptop fails every
+CI deploy.
+
+That is safe. A database id is not a credential -- it names a database but
+grants nothing without `CLOUDFLARE_API_TOKEN`, which stays a secret.
 
 Already created the database and lost the id?
 
