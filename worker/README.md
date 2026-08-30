@@ -38,6 +38,11 @@ skipping it produces `Invalid property: databaseId => Invalid uuid`, which does
 not obviously mean "you missed a step". `npm run db:init` and `npm run deploy`
 both refuse to run until it is filled in.
 
+**Commit that change.** The id is not a secret -- it means nothing without your
+account credentials -- and GitHub Actions deploys from the committed
+`wrangler.toml`, so a database_id that only exists on your laptop makes every
+CI deploy fail.
+
 Already created the database and lost the id?
 
 ```bash
@@ -116,6 +121,10 @@ In GitHub: **Settings → Secrets and variables → Actions → Secrets**.
 
 After that, pushing to `main` runs the tests and deploys if they pass. No
 secrets or data are touched by a deploy.
+
+Auto-deploy only fires on `main`, so the **first** deploy is the manual one in
+step 5 -- run it from whatever branch you are on, then merge to `main` and
+every deploy after that is automatic.
 
 ## The scheduled sync
 
