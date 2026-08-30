@@ -20,21 +20,25 @@ const DEFAULT_API_VERSION = '2025-01-23';
 const CATALOG_BATCH_SIZE = 500;
 
 /**
- * Every Square endpoint this Worker is allowed to touch. All three are reads.
+ * Every Square request this Worker is allowed to make, as path -> method.
  *
- * Two of them are POSTs, which looks alarming but is not: Square takes search
- * and batch-retrieve criteria as a request body, so the verb says nothing
- * about whether anything changes. Nothing here creates, updates, deletes,
- * cancels, pays or refunds.
+ * The method matters as much as the path. GET /v2/payments lists payments;
+ * POST to the same path is CreatePayment, which takes money. Allowing a path
+ * outright would permit both, so each entry pins one verb.
  *
- * This is enforced, not just documented -- request() rejects any path not on
- * the list, so adding a write would have to be a deliberate edit here rather
- * than a line slipped in somewhere else.
+ * Two of the reads are POSTs, which looks alarming but is not: Square takes
+ * search and batch-retrieve criteria as a request body, so there the verb says
+ * nothing about mutation. Nothing here creates, updates, deletes, cancels,
+ * pays or refunds.
+ *
+ * This is enforced, not just documented -- request() rejects anything that
+ * does not match, so adding a write would have to be a deliberate edit here.
  */
-const ALLOWED_ENDPOINTS = new Set([
-  '/v2/orders/search',        // read: recent orders for a location
-  '/v2/catalog/batch-retrieve', // read: modifier + modifier list objects
-  '/v2/locations',            // read: locations this token can see
+const ALLOWED_REQUESTS = new Map([
+  ['/v2/orders/search', 'POST'],          // read: recent orders for a location
+  ['/v2/catalog/batch-retrieve', 'POST'], // read: modifier + modifier list objects
+  ['/v2/locations', 'GET'],               // read: locations this token can see
+  ['/v2/payments', 'GET'],                // read: buyer email, captured at checkout
 ]);
 
 // Customer lookups are per-id, so the path varies; matched by shape instead.
@@ -59,11 +63,16 @@ export function squareConfig(env) {
   };
 }
 
-async function request(config, path, body) {
-  if (!ALLOWED_ENDPOINTS.has(path) && !CUSTOMER_PATH.test(path)) {
+async function request(config, path, body, query) {
+  const method = body === undefined ? 'GET' : 'POST';
+  // A per-id customer read is a GET; everything else must match the table.
+  const allowed = CUSTOMER_PATH.test(path) ? 'GET' : ALLOWED_REQUESTS.get(path);
+
+  if (allowed !== method) {
     throw new Error(
-      `Refusing to call ${path}: this Worker only reads from Square. `
-      + `Add it to ALLOWED_ENDPOINTS in square.js if that is genuinely intended.`,
+      `Refusing to ${method} ${path}: this Worker only reads from Square`
+      + `${allowed ? ` (${allowed} is allowed on this path)` : ''}. `
+      + 'Change ALLOWED_REQUESTS in square.js if that is genuinely intended.',
     );
   }
 
@@ -72,14 +81,14 @@ async function request(config, path, body) {
     'Square-Version': config.apiVersion,
   };
 
-  const options = { method: 'GET', headers };
+  const options = { method, headers };
   if (body !== undefined) {
-    options.method = 'POST';
     headers['Content-Type'] = 'application/json';
     options.body = JSON.stringify(body);
   }
 
-  const response = await fetch(`${config.host}${path}`, options);
+  const search = query ? `?${new URLSearchParams(query)}` : '';
+  const response = await fetch(`${config.host}${path}${search}`, options);
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -94,7 +103,7 @@ async function request(config, path, body) {
   return payload;
 }
 
-export const READ_ONLY_ENDPOINTS = ALLOWED_ENDPOINTS;
+export const READ_ONLY_ENDPOINTS = ALLOWED_REQUESTS;
 
 /** Recent orders for the configured location, newest first. */
 export async function searchOrders(config) {
@@ -147,6 +156,43 @@ export async function listLocations(config) {
 }
 
 /**
+ * Payments for the location since `beginTime`, keyed by the order they paid
+ * for.
+ *
+ * The buyer's email is entered on the final checkout page, for the receipt --
+ * so it lands on the Payment, not the Order. One listing covers every order in
+ * the batch, rather than a lookup per order.
+ */
+export async function fetchPaymentEmails(config, beginTime) {
+  const emailsByOrder = new Map();
+  let cursor;
+  let pages = 0;
+
+  do {
+    const query = { location_id: config.locationId, limit: '100' };
+    if (beginTime) query.begin_time = beginTime;
+    if (cursor) query.cursor = cursor;
+
+    const payload = await request(config, '/v2/payments', undefined, query);
+
+    for (const payment of payload.payments || []) {
+      if (payment.order_id && payment.buyer_email_address) {
+        // Payments come back newest first; keep the first email seen for an
+        // order so a later partial payment cannot overwrite it.
+        if (!emailsByOrder.has(payment.order_id)) {
+          emailsByOrder.set(payment.order_id, payment.buyer_email_address);
+        }
+      }
+    }
+
+    cursor = payload.cursor;
+    pages += 1;
+  } while (cursor && pages < 10);   // bound the walk; the sync is time-boxed
+
+  return emailsByOrder;
+}
+
+/**
  * Look up one customer's email. Used only for orders that carry a customer_id
  * but no fulfillment recipient. Returns '' rather than throwing: a missing
  * email should never fail a sync.
@@ -162,6 +208,6 @@ export async function fetchCustomerEmail(config, customerId) {
 }
 
 /** Exposed so tests can assert the Worker cannot reach a write endpoint. */
-export async function callSquare(config, path, body) {
-  return request(config, path, body);
+export async function callSquare(config, path, body, query) {
+  return request(config, path, body, query);
 }

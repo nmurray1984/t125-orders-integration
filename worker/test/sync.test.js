@@ -5,6 +5,10 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import { runSync } from '../src/sync.js';
+import { REGISTRATION_FIELDS } from '../src/registrations.js';
+
+/** Bound values are positional; look them up by field name, not by counting. */
+const field = (values, name) => values[REGISTRATION_FIELDS.indexOf(name)];
 
 const here = dirname(fileURLToPath(import.meta.url));
 const fixture = JSON.parse(readFileSync(join(here, 'fixtures', 'square-api.json'), 'utf8'));
@@ -45,12 +49,16 @@ function fakeDb() {
 }
 
 /** Serve the fixture in place of the Square API. */
-function stubSquare({ orders = fixture.orders, failWith } = {}) {
+function stubSquare({ orders = fixture.orders, failWith, payments = [] } = {}) {
   const calls = [];
   const catalogById = Object.fromEntries(fixture.catalog_objects.map((o) => [o.id, o]));
 
   globalThis.fetch = async (url, options) => {
     calls.push({ url: String(url), body: JSON.parse(options.body || '{}') });
+
+    if (String(url).includes('/v2/payments')) {
+      return Response.json({ payments });
+    }
 
     if (failWith) {
       return new Response(JSON.stringify({ errors: [{ detail: failWith }] }),
@@ -125,10 +133,10 @@ test('the upserted rows carry the parsed roster fields', async () => {
   await runSync(env);
 
   // order_id, line_item_uid, campout, variation_name, name, ...
-  const names = env.DB.upserts.map((values) => values[4]);
+  const names = env.DB.upserts.map((values) => field(values, 'name'));
   assert.ok(names.includes('John Smith'), `expected John Smith in ${JSON.stringify(names)}`);
 
-  const patrols = env.DB.upserts.map((values) => values[8]);
+  const patrols = env.DB.upserts.map((values) => field(values, 'patrol'));
   assert.ok(patrols.every(Boolean), 'patrol always has a value');
   assert.ok(patrols.includes('Rocking Chair'), 'empty patrol defaults to Rocking Chair');
 });
@@ -160,4 +168,62 @@ test('missing Square config is reported, not thrown', async () => {
   const result = await runSync(env);
   assert.equal(result.ok, false);
   assert.match(result.error, /SQUARE_ACCESS_TOKEN/);
+});
+
+test('the buyer email comes from the payment, not the order', async () => {
+  // Square records the email typed on the final checkout page against the
+  // Payment; the Order never sees it.
+  const env = baseEnv();
+  const calls = stubSquare({
+    payments: [
+      { order_id: 'ORDER_3', buyer_email_address: 'buyer@example.com' },
+      { order_id: 'ORDER_4', buyer_email_address: 'other@example.com' },
+    ],
+  });
+
+  await runSync(env);
+
+  const byOrder = Object.fromEntries(
+    env.DB.upserts.map((values) => [field(values, 'order_id'), field(values, 'email')]),
+  );
+  assert.equal(byOrder.ORDER_3, 'buyer@example.com');
+  assert.equal(byOrder.ORDER_4, 'other@example.com');
+
+  // The fixture's own fulfillment emails must still win over the payment.
+  assert.equal(byOrder.ORDER_1, 'john.smith@example.com');
+
+  const paymentCalls = calls.filter((c) => c.url.includes('/v2/payments'));
+  assert.equal(paymentCalls.length, 1, 'one listing covers the whole batch');
+  assert.match(paymentCalls[0].url, /location_id=LOC123/);
+  assert.match(paymentCalls[0].url, /begin_time=/, 'scoped to the oldest order fetched');
+});
+
+test('a payments failure leaves emails blank rather than failing the sync', async () => {
+  const env = baseEnv();
+  const catalogById = Object.fromEntries(fixture.catalog_objects.map((o) => [o.id, o]));
+
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/v2/payments')) {
+      return new Response(JSON.stringify({ errors: [{ detail: 'nope' }] }), { status: 403 });
+    }
+    if (String(url).endsWith('/v2/orders/search')) return Response.json({ orders: fixture.orders });
+    const ids = JSON.parse(options.body).object_ids;
+    return Response.json({ objects: ids.map((id) => catalogById[id]).filter(Boolean) });
+  };
+
+  const result = await runSync(env);
+  assert.equal(result.ok, true, 'the sync still completes');
+  assert.equal(result.upserted, 5);
+});
+
+test('payments are not requested when every order already has an email', async () => {
+  const env = baseEnv();
+  const withEmail = fixture.orders.map((order) => ({
+    ...order,
+    fulfillments: [{ pickup_details: { recipient: { email_address: 'a@b.test' } } }],
+  }));
+  const calls = stubSquare({ orders: withEmail });
+
+  await runSync(env);
+  assert.equal(calls.filter((c) => c.url.includes('/v2/payments')).length, 0);
 });

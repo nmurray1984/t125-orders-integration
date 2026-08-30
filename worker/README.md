@@ -152,6 +152,7 @@ The sync only reads. Three endpoints, enforced by an allowlist in
 | `/v2/orders/search` | POST | reads recent orders for the location |
 | `/v2/catalog/batch-retrieve` | POST | reads the modifier objects those orders reference |
 | `/v2/locations` | GET | lists locations, for the credential check |
+| `/v2/payments` | GET | reads the buyer email captured at checkout |
 | `/v2/customers/{id}` | GET | reads one buyer's email, for orders that carry only a customer_id |
 
 Two are POSTs, which reads as alarming but is not: Square takes search and
@@ -159,9 +160,11 @@ batch-retrieve criteria as a request body, so the verb says nothing about
 whether anything changes. No order is created, modified, cancelled, paid or
 refunded; no catalog item is touched; no customer record is written.
 
-`/v2/customers` itself (which creates customers) and anything below a customer
-stay refused; only the single-customer read is allowed. Any other path is
-refused before a request leaves the Worker, so introducing a
+The allowlist pins a **method** per path, not just the path. That matters most
+for payments: `GET /v2/payments` lists them, while `POST` to the same path is
+CreatePayment, which takes money. `/v2/customers` (which creates customers) and
+anything below a customer stay refused; only the single-customer read is
+allowed. Any other request is refused before it leaves the Worker, so introducing a
 write would mean deliberately editing the allowlist. `test/readonly.test.js`
 asserts this against a list of real Square write endpoints, and
 `test_d1_sync.py` does the same for the Python CLI.
@@ -203,17 +206,33 @@ reading the roster.
 
 ## Where the email comes from
 
-Square exposes the buyer's email through a fulfillment recipient, and which
-kind depends on how the order was placed, so the sync checks `pickup_details`,
-`shipment_details` and `delivery_details` in turn. Orders that carry only a
-`customer_id` get one extra read against `/v2/customers/{id}`, deduplicated per
-customer and best-effort -- a lookup that fails leaves the email blank rather
-than failing the whole sync.
+**The Order does not have it.** The buyer types their email on the final
+checkout page, for the receipt, so Square records it against the **Payment** as
+`buyer_email_address`. Nothing in `/v2/orders/search` carries it.
 
-If emails come back empty across the board, the orders are shaped differently
-than expected. `python square_orders.py --square-env production --output stdout`
-prints an Email column, which is the quickest way to see whether anything is
-coming through.
+The sync therefore looks in three places, in order:
+
+1. a fulfillment recipient (`pickup_details` / `shipment_details` /
+   `delivery_details`) -- present when an order was taken that way
+2. **`GET /v2/payments`**, matched on `order_id`. One listing covers the whole
+   batch rather than a lookup per order, scoped to the oldest order fetched
+3. `GET /v2/customers/{id}`, for an order with a customer but no payment email
+
+All of it is best-effort: a lookup that fails leaves the email blank rather
+than failing the sync, and payments are not requested at all when every order
+already has one.
+
+To see what your own data looks like without printing anyone's details:
+
+```bash
+curl -s "https://connect.squareup.com/v2/payments?location_id=$SQUARE_LOCATION_ID&limit=3" \
+  -H "Authorization: Bearer $SQUARE_ACCESS_TOKEN" \
+  -H "Square-Version: 2025-01-23" \
+  | python3 ../scripts/inspect_order.py
+```
+
+`scripts/inspect_order.py` prints JSON paths with each value's shape rather
+than its content, and flags anything email-shaped.
 
 ## The scheduled sync
 
