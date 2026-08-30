@@ -148,12 +148,22 @@ fetches orders and catalog objects -> `extract.js` parses modifiers ->
 single order can register several people, one per line item. `extract_order_data()`
 captures `line_item.uid` for this reason.
 
-**Campout partitioning**: `line_item_name` becomes the `campout` column. This
-assumes each campout is a distinct Square catalog item. If a single item is ever
-reused across campouts, partition on `order_created_at` instead.
+**Campout partitioning**: `registrations.campout` holds the Square
+`line_item_name`, i.e. the *registration type*, not the campout. Square sells one
+campout as several catalog items ("Scout Registration - NASA Campout - Oct 2026",
+"Scouter Registration - ..."), so the grouping lives in the `campouts` and
+`registration_types` tables and is applied at read time via `CAMPOUT_JOIN` /
+`CAMPOUT_NAME` in `worker/src/mapping.js`. An unmapped registration type still
+shows as its own campout, so the roster works before setup is done.
 
-**Campout dates** (`worker/src/campouts.js`): Square carries no campout date, so
-a date is parsed out of the campout name when present (ISO, `Nov 14`, `11/14`,
+**Campout setup** (`worker/src/setup.js`, `/setup` page): groups registration
+types into campouts and sets their dates. Registration types are listed only from
+what the sync has produced rows for -- you cannot map what Square has not sold
+yet. Deleting a campout sets its `registration_types.campout_id` to NULL and
+never touches `registrations`.
+
+**Campout dates** (`worker/src/campouts.js`): a date configured in setup wins;
+otherwise a date is parsed out of the campout name when present (ISO, `Nov 14`, `11/14`,
 `November 2026`), with the year inferred as the nearest when omitted. The soonest
 future campout is flagged `upcoming` and is what `/` opens on. With no parseable
 dates anywhere it falls back to the campout with the most recent signup activity.

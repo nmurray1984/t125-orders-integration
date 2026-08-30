@@ -149,6 +149,39 @@ asserts this against a list of real Square write endpoints, and
 
 Everything the sync writes goes to **your D1 database**, never back to Square.
 
+## Campout setup
+
+Square has no concept of a campout. One campout is sold as several catalog
+items -- "Scout Registration - NASA Campout - Oct 2026" and "Scouter
+Registration - NASA Campout - Oct 2026" are one weekend, two line items -- so
+the roster would otherwise show each registration type as its own campout.
+
+The **Campout setup** link at the bottom of the roster groups them:
+
+- **Not yet grouped** proposes a campout per set of related registrations, by
+  dropping everything through the first " - " after "Registration". Give it a
+  date and one click creates the campout and assigns all of them. "Assign these
+  individually instead" splits a group that guessed wrong -- prospective and
+  regular registrations for the same month, say.
+- **Campouts** lists what exists, each with an editable name, a date, and the
+  registration types assigned to it.
+
+Only registration types the sync has **actually seen** appear. You cannot map a
+campout Square has not sold yet, which is why doing one test registration
+before sending the link out is worth keeping: it makes the new campout
+configurable before real signups arrive.
+
+Nothing here touches roster data. Deleting a campout only ungroups its
+registrations; the people stay. Grouping is applied when reading, so it can be
+changed at any time and takes effect on the next page load.
+
+A date set here beats one parsed out of the name, and drives which campout is
+"upcoming". Campouts with no date fall back to a date in the name, then to
+signup activity.
+
+Anyone with the troop password can edit setup -- the same trust level as
+reading the roster.
+
 ## The scheduled sync
 
 `[triggers] crons` in `wrangler.toml` runs the sync hourly except 1am-5am CST,
@@ -267,6 +300,12 @@ makes it exact.
 | `POST` | `/api/logout` | — |
 | `GET` | `/api/session` | — (reports whether the cookie is valid) |
 | `GET` | `/api/campouts` | session cookie; returns `starts_at`, `is_past`, `upcoming` |
+| `GET` | `/api/setup` | session cookie; campouts, synced registration types, suggestions |
+| `POST` | `/api/setup/campouts` | session cookie; create |
+| `PATCH` | `/api/setup/campouts/:id` | session cookie; rename or re-date |
+| `DELETE` | `/api/setup/campouts/:id` | session cookie; ungroups, deletes no roster data |
+| `POST` | `/api/setup/assign` | session cookie; map one registration type |
+| `POST` | `/api/setup/group` | session cookie; create a campout and assign several |
 | `GET` | `/api/roster?campout=` | session cookie; returns rows + per-patrol headcounts |
 | `GET` | `/api/export.csv?campout=` | session cookie |
 | `POST` | `/api/sync` | `Authorization: Bearer <SYNC_TOKEN>`; accepts rows from the CLI |

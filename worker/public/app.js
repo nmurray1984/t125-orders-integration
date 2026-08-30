@@ -1,11 +1,14 @@
 /* Troop 125 roster front end. Session state lives in an HttpOnly cookie, so
    this file never sees or stores the password after sign-in. */
 
+import { loadSetup } from './setup.js';
+
 const ALL = '__all__';
 
 const el = (id) => document.getElementById(id);
 const loginSection = el('login');
 const appSection = el('app');
+const setupSection = el('setup');
 const rosterBody = el('roster-body');
 
 // Rank order for sorting; anything unknown (adults, blanks) sorts last.
@@ -20,6 +23,7 @@ let currentCampout = ALL;
 function show(section) {
   loginSection.hidden = section !== 'login';
   appSection.hidden = section !== 'app';
+  setupSection.hidden = section !== 'setup';
 }
 
 async function api(path, options) {
@@ -32,6 +36,10 @@ async function api(path, options) {
 }
 
 /* --- Routing: each campout is its own URL ---------------------------- */
+
+function isSetupPath() {
+  return window.location.pathname.replace(/\/+$/, '') === '/setup';
+}
 
 function campoutFromPath() {
   const match = window.location.pathname.match(/^\/c\/(.+)$/);
@@ -272,6 +280,12 @@ async function showCampout(campout, { push = true } = {}) {
 }
 
 async function enterApp() {
+  if (isSetupPath()) {
+    show('setup');
+    await loadSetup();
+    return;
+  }
+
   show('app');
   await loadCampouts();
 
@@ -342,8 +356,19 @@ el('search').addEventListener('input', applyView);
 el('sort').addEventListener('change', applyView);
 el('print').addEventListener('click', () => window.print());
 
+// The setup page is a full navigation, so it does not need history handling
+// here -- but coming back from it does.
 window.addEventListener('popstate', () => {
-  if (appSection.hidden) return;
+  if (loginSection.hidden === false) return;
+  if (isSetupPath()) {
+    show('setup');
+    loadSetup().catch(() => show('login'));
+    return;
+  }
+  if (setupSection.hidden === false) {
+    enterApp().catch(() => show('login'));
+    return;
+  }
   const requested = campoutFromPath();
   const target = requested === 'all' || !requested ? ALL : requested;
   showCampout(target, { push: false });

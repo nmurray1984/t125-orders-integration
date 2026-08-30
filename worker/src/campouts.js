@@ -92,11 +92,20 @@ export function annotateCampouts(campouts, now = new Date()) {
   const today = startOfDay(now);
 
   const annotated = campouts.map((campout) => {
-    const parsed = parseCampoutDate(campout.campout, now);
+    // A date set on the setup page is authoritative; parsing the name is only
+    // a fallback for campouts nobody has configured yet.
+    const configured = campout.configured_starts_at
+      ? new Date(`${campout.configured_starts_at}T00:00:00Z`)
+      : null;
+    const usable = configured && !Number.isNaN(configured.getTime())
+      ? configured
+      : parseCampoutDate(campout.campout, now);
+
     return {
       ...campout,
-      starts_at: parsed ? parsed.toISOString().slice(0, 10) : null,
-      is_past: parsed ? startOfDay(parsed) < today : null,
+      starts_at: usable ? usable.toISOString().slice(0, 10) : null,
+      date_source: usable ? (configured ? 'configured' : 'name') : null,
+      is_past: usable ? startOfDay(usable) < today : null,
     };
   });
 

@@ -93,8 +93,56 @@
 
     <p id="empty" class="empty" hidden>No registrations match.</p>
   </section>
+
+  <footer class="page-footer">
+    <a href="/setup" id="setup-link">Campout setup</a>
+    <span class="muted">Group Square registrations into campouts and set their dates.</span>
+  </footer>
 </main>
 
-<script src="/app.js"></script>
+<main id="setup" hidden>
+  <header class="bar">
+    <div>
+      <p class="eyebrow">Campout setup</p>
+      <h1>Registrations and campouts</h1>
+      <p class="muted">
+        Square sells one campout as several registrations — Scout, Scouter, and
+        so on. Group them here so the roster shows one campout instead of
+        several. Only registrations that have already synced from Square appear.
+      </p>
+    </div>
+    <a href="/" class="button ghost" id="back-to-roster">Back to roster</a>
+  </header>
+
+  <p id="setup-error" class="error" role="alert" hidden></p>
+
+  <section aria-labelledby="unmapped-heading">
+    <h2 id="unmapped-heading" class="section-heading">Not yet grouped</h2>
+    <p id="unmapped-empty" class="muted" hidden>
+      Every synced registration belongs to a campout.
+    </p>
+    <div id="suggestions"></div>
+  </section>
+
+  <section aria-labelledby="campouts-heading">
+    <h2 id="campouts-heading" class="section-heading">Campouts</h2>
+    <p id="campouts-empty" class="muted" hidden>No campouts yet.</p>
+    <div id="campout-list"></div>
+
+    <form id="new-campout" class="new-campout">
+      <label class="field grow">
+        <span>New campout</span>
+        <input id="new-campout-name" type="text" placeholder="e.g. NASA Campout - Oct 2026" required>
+      </label>
+      <label class="field">
+        <span>Date</span>
+        <input id="new-campout-date" type="date">
+      </label>
+      <button type="submit">Add campout</button>
+    </form>
+  </section>
+</main>
+
+<script type="module" src="/app.js"></script>
 </body>
 </html>

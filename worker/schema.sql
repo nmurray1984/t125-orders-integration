@@ -51,3 +51,28 @@ CREATE TABLE IF NOT EXISTS login_attempts (
   attempts      INTEGER NOT NULL DEFAULT 0,
   window_start  INTEGER NOT NULL DEFAULT 0
 );
+
+-- A campout as the troop thinks of it. Square has no such concept: one campout
+-- is sold as several catalog items ("Scout Registration - NASA Campout -
+-- Oct 2026", "Scouter Registration - ..."), so the grouping has to be recorded
+-- here rather than inferred from a name.
+CREATE TABLE IF NOT EXISTS campouts (
+  id          INTEGER PRIMARY KEY AUTOINCREMENT,
+  name        TEXT NOT NULL UNIQUE,
+  -- YYYY-MM-DD. Null falls back to a date parsed out of the name.
+  starts_at   TEXT,
+  created_at  TEXT NOT NULL DEFAULT '',
+  updated_at  TEXT NOT NULL DEFAULT ''
+);
+
+-- Maps a Square line item name to a campout. Rows appear here only for
+-- registration types that have actually been synced -- you can only map what
+-- Square has shown you.
+CREATE TABLE IF NOT EXISTS registration_types (
+  line_item_name TEXT PRIMARY KEY,
+  campout_id     INTEGER REFERENCES campouts(id) ON DELETE SET NULL,
+  assigned_at    TEXT NOT NULL DEFAULT ''
+);
+
+CREATE INDEX IF NOT EXISTS idx_registration_types_campout
+  ON registration_types (campout_id);

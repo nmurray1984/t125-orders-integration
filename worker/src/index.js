@@ -11,9 +11,18 @@ import {
   recordFailedLogin,
 } from './auth.js';
 import { annotateCampouts } from './campouts.js';
+import { CAMPOUT_JOIN, CAMPOUT_NAME, groupSuggestions } from './mapping.js';
 import { ROSTER_COLUMNS, toCsv } from './csv.js';
 import { normalizeRow, recordSync, upsertRows } from './registrations.js';
 import { runSync } from './sync.js';
+import {
+  applyGrouping,
+  assignRegistrationType,
+  createCampout,
+  deleteCampout,
+  readSetup,
+  updateCampout,
+} from './setup.js';
 
 const ALL_CAMPOUTS = '__all__';
 
@@ -113,13 +122,16 @@ async function lastSyncedAt(env) {
 
 async function handleCampouts(env) {
   const { results } = await env.DB.prepare(
-    `SELECT campout,
+    `SELECT ${CAMPOUT_NAME} AS campout,
+            MAX(c.starts_at) AS configured_starts_at,
             COUNT(*) AS registrations,
+            COUNT(DISTINCT registrations.campout) AS registration_types,
             MIN(order_created_at) AS first_order_at,
             MAX(order_created_at) AS last_order_at
      FROM registrations
-     WHERE campout <> ''
-     GROUP BY campout`,
+     ${CAMPOUT_JOIN}
+     WHERE registrations.campout <> ''
+     GROUP BY ${CAMPOUT_NAME}`,
   ).all();
 
   return json({
@@ -139,8 +151,12 @@ async function patrolCounts(env, campout) {
   }
 
   const { results } = await env.DB.prepare(
-    `SELECT patrol, COUNT(*) AS headcount FROM registrations WHERE campout = ?1
-     GROUP BY patrol ORDER BY headcount DESC, patrol ASC`,
+    `SELECT registrations.patrol AS patrol, COUNT(*) AS headcount
+     FROM registrations
+     ${CAMPOUT_JOIN}
+     WHERE ${CAMPOUT_NAME} = ?1
+     GROUP BY registrations.patrol
+     ORDER BY headcount DESC, patrol ASC`,
   ).bind(campout).all();
   return results ?? [];
 }
@@ -149,12 +165,18 @@ async function rosterRows(env, campout) {
   const query =
     campout && campout !== ALL_CAMPOUTS
       ? env.DB.prepare(
-          `SELECT * FROM registrations WHERE campout = ?1
-           ORDER BY patrol ASC, name ASC`,
+          `SELECT registrations.*, ${CAMPOUT_NAME} AS campout_name
+           FROM registrations
+           ${CAMPOUT_JOIN}
+           WHERE ${CAMPOUT_NAME} = ?1
+           ORDER BY registrations.patrol ASC, registrations.name ASC`,
         ).bind(campout)
       : env.DB.prepare(
-          `SELECT * FROM registrations
-           ORDER BY order_created_at DESC, patrol ASC, name ASC`,
+          `SELECT registrations.*, ${CAMPOUT_NAME} AS campout_name
+           FROM registrations
+           ${CAMPOUT_JOIN}
+           ORDER BY registrations.order_created_at DESC,
+                    registrations.patrol ASC, registrations.name ASC`,
         );
   const { results } = await query.all();
   return results ?? [];
@@ -191,6 +213,50 @@ async function handleExport(url, env) {
       'Cache-Control': 'no-store',
     },
   });
+}
+
+/**
+ * Campout setup. Everyone with the troop password can edit this -- the same
+ * trust level as reading the roster, which is the model throughout.
+ */
+async function handleSetup(url, request, env) {
+  const path = url.pathname.replace(/^\/api\/setup/, '') || '/';
+
+  if (path === '/' && request.method === 'GET') {
+    return json(await readSetup(env));
+  }
+
+  // Only the methods that carry a payload need one. DELETE has no body, and
+  // demanding JSON from it rejected every delete with a 400.
+  const expectsBody = request.method === 'POST' || request.method === 'PATCH';
+  const body = expectsBody ? await request.json().catch(() => null) : {};
+  if (body === null) return json({ error: 'invalid JSON body' }, { status: 400 });
+
+  const respond = (result) =>
+    (result.error
+      ? json({ error: result.error }, { status: result.status || 400 })
+      : json(result));
+
+  if (path === '/campouts' && request.method === 'POST') {
+    return respond(await createCampout(env, body));
+  }
+
+  if (path === '/assign' && request.method === 'POST') {
+    return respond(await assignRegistrationType(env, body));
+  }
+
+  if (path === '/group' && request.method === 'POST') {
+    return respond(await applyGrouping(env, body));
+  }
+
+  const campoutMatch = path.match(/^\/campouts\/(\d+)$/);
+  if (campoutMatch) {
+    const id = Number(campoutMatch[1]);
+    if (request.method === 'PATCH') return respond(await updateCampout(env, id, body));
+    if (request.method === 'DELETE') return respond(await deleteCampout(env, id));
+  }
+
+  return json({ error: 'not found' }, { status: 404 });
 }
 
 function missingConfig(env) {
@@ -273,6 +339,7 @@ export default {
       if (url.pathname === '/api/campouts') return handleCampouts(env);
       if (url.pathname === '/api/roster') return handleRoster(url, env);
       if (url.pathname === '/api/export.csv') return handleExport(url, env);
+      if (url.pathname.startsWith('/api/setup')) return handleSetup(url, request, env);
     } catch (error) {
       return json({ error: `database error: ${error.message}` }, { status: 500 });
     }

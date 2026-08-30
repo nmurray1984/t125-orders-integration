@@ -309,11 +309,108 @@ td a { color: inherit; }
   #logout { padding: .45rem .7rem; font-size: .85rem; align-self: start; }
 }
 
+/* --- Campout setup --------------------------------------------------- */
+
+.page-footer {
+  margin-top: 2.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem 1rem;
+  align-items: baseline;
+}
+
+.page-footer a { color: var(--accent); font-weight: 600; }
+
+.setup-card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin-bottom: .85rem;
+}
+
+.setup-card-head { margin-bottom: .6rem; }
+.setup-card-title { margin: 0; font-weight: 700; font-size: 1.05rem; }
+
+.type-list {
+  list-style: none;
+  margin: 0 0 .75rem;
+  padding: 0;
+  display: grid;
+  gap: .25rem;
+}
+
+.type-list li {
+  font-size: .85rem;
+  color: var(--muted);
+  padding-left: 1rem;
+  position: relative;
+}
+
+.type-list li::before {
+  content: "";
+  position: absolute;
+  left: 0;
+  top: .55em;
+  width: .35rem;
+  height: .35rem;
+  border-radius: 50%;
+  background: var(--border);
+}
+
+.setup-actions { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.inline-date { width: auto; }
+
+details { margin-top: .75rem; }
+summary { cursor: pointer; font-size: .85rem; color: var(--muted); }
+summary:hover { color: var(--text); }
+
+.assign-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .5rem;
+  align-items: center;
+  padding: .4rem 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.assign-row:last-child { border-bottom: none; }
+.assign-name { flex: 1 1 16rem; font-size: .875rem; }
+.assign-row select { width: auto; min-width: 12rem; }
+.assign-row .count { font-size: .8rem; white-space: nowrap; }
+
+.assigned-list { margin-top: .75rem; border-top: 1px solid var(--border); }
+
+.campout-form, .new-campout {
+  display: flex;
+  flex-wrap: wrap;
+  gap: .6rem;
+  align-items: end;
+}
+
+.new-campout {
+  background: var(--surface);
+  border: 1px dashed var(--border);
+  border-radius: 12px;
+  padding: 1rem 1.1rem;
+  margin-top: 1rem;
+}
+
+.campout-form input[type="date"], .new-campout input[type="date"] { width: auto; }
+
+@media (max-width: 46rem) {
+  .assign-row select { width: 100%; min-width: 0; }
+  .campout-form > *, .new-campout > * { flex: 1 1 100%; }
+  .setup-actions > * { flex: 1 1 auto; }
+}
+
 /* --- Print: a roster you can carry to the campsite ------------------- */
 
 @media print {
   body { padding: 0; background: #fff; color: #000; max-width: none; }
-  .switcher, .controls, .bar button, #empty { display: none !important; }
+  .switcher, .controls, .bar button, #empty, .page-footer { display: none !important; }
   .table-wrap { border: none; }
   .tags { display: none; }
   .hero, .tile { border: 1px solid #999; }
