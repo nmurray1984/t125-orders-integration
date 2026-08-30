@@ -6,12 +6,39 @@ from square.environment import SquareEnvironment
 from collections import defaultdict
 from config import Config
 
-client = Square(
-    environment=SquareEnvironment.PRODUCTION,
-    token=Config.SQUARE_ACCESS_TOKEN
-)
-
 FETCH_LIMIT = Config.SQUARE_FETCH_LIMIT
+
+# The Square client is built lazily so --square-env can choose the environment
+# before anything talks to Square. Nothing here should ever reach production
+# just because a module got imported.
+_client = None
+_location_id = None
+
+ENVIRONMENTS = {
+    'sandbox': SquareEnvironment.SANDBOX,
+    'production': SquareEnvironment.PRODUCTION,
+}
+
+
+def configure_square(environment, token, location_id):
+    """Point this module at a Square environment. Returns the client."""
+    global _client, _location_id
+    _client = Square(environment=ENVIRONMENTS[environment], token=token)
+    _location_id = location_id
+    return _client
+
+
+def get_client():
+    """The configured Square client, defaulting to sandbox if never configured."""
+    if _client is None:
+        environment = Config.SQUARE_ENVIRONMENT
+        token, location_id, _ = Config.square_credentials(environment)
+        return configure_square(environment, token, location_id)
+    return _client
+
+
+def get_location_id():
+    return _location_id if _location_id is not None else Config.SQUARE_LOCATION_ID
 
 def extract_modifier_list_ids(orders):
     """Extract modifier list IDs from orders"""
@@ -37,7 +64,7 @@ def get_modifier_details(catalog_versions_dict):
         unique_object_ids = list(dict.fromkeys(object_ids))
         
         try:
-            result = client.catalog.batch_get(
+            result = get_client().catalog.batch_get(
                 object_ids=unique_object_ids,
                 catalog_version=catalog_version
             )
@@ -70,7 +97,7 @@ def get_modifier_list_details(modifier_list_ids):
     # Make separate API calls for each catalog version
     for catalog_version, object_ids in catalog_versions.items():
         try:
-            result = client.catalog.batch_get(
+            result = get_client().catalog.batch_get(
                 object_ids=object_ids,
                 catalog_version=catalog_version
             )
@@ -91,8 +118,8 @@ def get_modifier_list_details(modifier_list_ids):
 def get_recent_orders():
     """Fetch the most recent orders from Square API"""
     try:
-        result = client.orders.search(
-            location_ids=[Config.SQUARE_LOCATION_ID],
+        result = get_client().orders.search(
+            location_ids=[get_location_id()],
             limit=FETCH_LIMIT
         )
         if hasattr(result, 'errors') and result.errors:
@@ -311,6 +338,13 @@ def main():
         description='Fetch Square orders and output to CSV or Google Sheets'
     )
     parser.add_argument(
+        '--square-env',
+        choices=['sandbox', 'production'],
+        default=Config.SQUARE_ENVIRONMENT,
+        help='Which Square environment to read from. Defaults to SQUARE_ENVIRONMENT, '
+             'or sandbox when that is unset -- production is always deliberate.'
+    )
+    parser.add_argument(
         '--output',
         choices=['stdout', 'sheets', 'd1', 'both'],
         default='stdout',
@@ -324,7 +358,22 @@ def main():
         Config.validate_google_sheets_config()
     if args.output in ('d1', 'both'):
         Config.validate_d1_config()
-    Config.validate_square_config()
+
+    token, location_id, source = Config.validate_square_config(args.square_env)
+    configure_square(args.square_env, token, location_id)
+
+    # Say which environment out loud. Confusing the two is the whole risk here.
+    print(f"Square environment: {args.square_env} "
+          f"(token from {source}, location {location_id})", file=sys.stderr)
+
+    # Sandbox registrations are fake. Letting them into the deployed roster
+    # would mix invented scouts in with real ones.
+    if (args.square_env == 'sandbox'
+            and args.output in ('d1', 'both')
+            and not Config.is_local_sync_url()):
+        print("WARNING: syncing SANDBOX data to a non-local D1 "
+              f"({Config.D1_SYNC_URL}). Test data will land in the real roster.",
+              file=sys.stderr)
 
     print("Fetching recent orders from Square API...", file=sys.stderr)
     orders = get_recent_orders()

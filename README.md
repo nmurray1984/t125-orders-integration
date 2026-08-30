@@ -33,8 +33,11 @@ hardcoded in the script.
 
 | Variable | Required for | Notes |
 | --- | --- | --- |
-| `SQUARE_ACCESS_TOKEN` | always | Square API token |
+| `SQUARE_ACCESS_TOKEN` | always | Square API token (production) |
 | `SQUARE_LOCATION_ID` | always | e.g. `LRG8TDY17X9VD` |
+| `SQUARE_SANDBOX_ACCESS_TOKEN` | sandbox | sandbox token; falls back to the above |
+| `SQUARE_SANDBOX_LOCATION_ID` | sandbox | sandbox location, distinct from production |
+| `SQUARE_ENVIRONMENT` | optional | default for `--square-env`, default `sandbox` |
 | `SQUARE_FETCH_LIMIT` | optional | orders to fetch, default 70 |
 | `D1_SYNC_URL` | `--output d1` | `https://…/api/sync` on your Worker |
 | `D1_SYNC_TOKEN` | `--output d1` | the Worker's `SYNC_TOKEN` secret |
@@ -54,6 +57,28 @@ python square_orders.py --output both    # Sheets + D1, for the migration
 
 Use `both` while you are still double-checking the web app against the sheet,
 then switch to `d1` and stop maintaining the spreadsheet.
+
+### Sandbox vs production
+
+`--square-env` picks which Square environment to read from, and **defaults to
+`sandbox`** — reading real orders is always something you asked for:
+
+```bash
+python square_orders.py --square-env sandbox --output stdout
+python square_orders.py --square-env production --output d1
+```
+
+`SQUARE_ENVIRONMENT` sets the default when the flag is omitted; the flag wins
+over it. The scheduled GitHub Actions sync passes `--square-env production`
+explicitly, so flipping the local default never affects it.
+
+Every run prints which environment, credential source and location it used, so
+you are never guessing. Sandbox has its own token *and* its own location ID —
+they are not interchangeable. Put them in `SQUARE_SANDBOX_ACCESS_TOKEN` and
+`SQUARE_SANDBOX_LOCATION_ID` and both environments can live in `.env` at once.
+
+Syncing sandbox data to a non-local `D1_SYNC_URL` prints a warning: invented
+scouts would otherwise land in the real roster.
 
 ## The web app
 

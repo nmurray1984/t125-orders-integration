@@ -96,7 +96,16 @@ npm run dev             # wrangler dev, reads secrets from .dev.vars
 
 **Authentication**: Uses environment variable `SQUARE_ACCESS_TOKEN` (configured in config.py)
 
-**Environment**: Production (SquareEnvironment.PRODUCTION)
+**Environment**: selected by `--square-env {sandbox,production}`, defaulting to
+`SQUARE_ENVIRONMENT` and then to **sandbox**. The client is built lazily in
+`configure_square()` / `get_client()` so importing the module never constructs a
+production client. The GitHub Actions sync passes `--square-env production`
+explicitly -- changing the default must not silently redirect it.
+
+Sandbox and production have separate tokens *and* separate location IDs
+(`SQUARE_SANDBOX_ACCESS_TOKEN` / `SQUARE_SANDBOX_LOCATION_ID`); sandbox falls back
+to the generic vars when the sandbox-specific ones are unset. Every run prints the
+environment, credential source and location to stderr.
 
 **Key APIs Used**:
 - `client.orders.search()` - Fetches orders by location
@@ -197,8 +206,10 @@ All configuration is managed through environment variables (see config.py). Set 
 ### Required Environment Variables
 
 **For Square API (always required)**:
-- `SQUARE_ACCESS_TOKEN`: Square API access token
+- `SQUARE_ACCESS_TOKEN`: Square API access token (production)
 - `SQUARE_LOCATION_ID`: Square location ID (e.g., "LRG8TDY17X9VD")
+- `SQUARE_SANDBOX_ACCESS_TOKEN` / `SQUARE_SANDBOX_LOCATION_ID`: sandbox equivalents
+- `SQUARE_ENVIRONMENT`: default for `--square-env` (default: "sandbox")
 
 **For Google Sheets output (required when using `--output sheets`)**:
 - `GOOGLE_SHEET_ID`: Target Google Spreadsheet ID

@@ -68,11 +68,14 @@ jobs:
           SQUARE_FETCH_LIMIT: ${{ vars.SQUARE_FETCH_LIMIT || '50' }}
           D1_SYNC_URL: ${{ vars.D1_SYNC_URL }}
           D1_SYNC_TOKEN: ${{ secrets.D1_SYNC_TOKEN }}
+          # The CLI defaults to sandbox, so the scheduled sync must say
+          # production explicitly or it would quietly read test data.
+          SQUARE_ENVIRONMENT: production
           # 'both' writes to Sheets and D1. Switch to 'd1' once you have
           # stopped using the spreadsheet.
           OUTPUT_MODE: ${{ vars.OUTPUT_MODE || 'both' }}
         run: |
-          python square_orders.py --output "$OUTPUT_MODE"
+          python square_orders.py --output "$OUTPUT_MODE" --square-env production
 
       - name: Report execution time
         if: always()

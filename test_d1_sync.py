@@ -167,6 +167,53 @@ def test_sync_url_validation():
     ])
 
 
+def test_square_environment_selection():
+    """The flag must actually change the Square host, not just the label"""
+    print("\nTesting Square environment selection...")
+    from square_orders import configure_square
+    from config import Config
+
+    sandbox = configure_square('sandbox', 'tok', 'LOC')._client_wrapper.get_base_url()
+    production = configure_square('production', 'tok', 'LOC')._client_wrapper.get_base_url()
+
+    results = [
+        check("sandbox points at squareupsandbox.com", 'squareupsandbox.com' in sandbox),
+        check("production points at squareup.com",
+              'squareup.com' in production and 'sandbox' not in production),
+        check("the two differ", sandbox != production),
+    ]
+
+    # Credential resolution: sandbox vars win when set, generic ones are the
+    # fallback so sandbox-only credentials still work in SQUARE_ACCESS_TOKEN.
+    original = (Config.SQUARE_ACCESS_TOKEN, Config.SQUARE_LOCATION_ID,
+                Config.SQUARE_SANDBOX_ACCESS_TOKEN, Config.SQUARE_SANDBOX_LOCATION_ID)
+    try:
+        Config.SQUARE_ACCESS_TOKEN = 'prod-token'
+        Config.SQUARE_LOCATION_ID = 'PRODLOC'
+        Config.SQUARE_SANDBOX_ACCESS_TOKEN = 'sandbox-token'
+        Config.SQUARE_SANDBOX_LOCATION_ID = 'SBLOC'
+
+        token, location, _ = Config.square_credentials('sandbox')
+        results.append(check("sandbox uses the sandbox credentials",
+                             (token, location) == ('sandbox-token', 'SBLOC')))
+
+        token, location, _ = Config.square_credentials('production')
+        results.append(check("production uses the production credentials",
+                             (token, location) == ('prod-token', 'PRODLOC')))
+
+        Config.SQUARE_SANDBOX_ACCESS_TOKEN = ''
+        Config.SQUARE_SANDBOX_LOCATION_ID = ''
+        token, location, source = Config.square_credentials('sandbox')
+        results.append(check("sandbox falls back to the generic vars when unset",
+                             (token, location, source) ==
+                             ('prod-token', 'PRODLOC', 'SQUARE_ACCESS_TOKEN')))
+    finally:
+        (Config.SQUARE_ACCESS_TOKEN, Config.SQUARE_LOCATION_ID,
+         Config.SQUARE_SANDBOX_ACCESS_TOKEN, Config.SQUARE_SANDBOX_LOCATION_ID) = original
+
+    return all(results)
+
+
 def main():
     print("Running D1 sync tests...")
     print("=" * 60)
@@ -179,6 +226,7 @@ def main():
         test_client_error_is_not_retried(),
         test_server_error_is_retried(),
         test_sync_url_validation(),
+        test_square_environment_selection(),
     ]
 
     print("\n" + "=" * 60)
