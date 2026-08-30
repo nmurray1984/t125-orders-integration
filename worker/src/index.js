@@ -5,6 +5,7 @@ import {
   createSessionCookie,
   hasValidSession,
   hasValidSyncToken,
+  isSecureRequest,
   loginThrottle,
   passwordMatches,
   recordFailedLogin,
@@ -140,7 +141,8 @@ async function handleLogin(request, env) {
   }
 
   await clearFailedLogins(env, ip);
-  return json({ ok: true }, { headers: { 'Set-Cookie': await createSessionCookie(env) } });
+  const cookie = await createSessionCookie(env, isSecureRequest(request));
+  return json({ ok: true }, { headers: { 'Set-Cookie': cookie } });
 }
 
 async function lastSyncedAt(env) {
@@ -237,7 +239,8 @@ export default {
     }
 
     if (url.pathname === '/api/logout' && request.method === 'POST') {
-      return json({ ok: true }, { headers: { 'Set-Cookie': clearSessionCookie() } });
+      const cleared = clearSessionCookie(isSecureRequest(request));
+      return json({ ok: true }, { headers: { 'Set-Cookie': cleared } });
     }
 
     const authenticated = await hasValidSession(env, request);

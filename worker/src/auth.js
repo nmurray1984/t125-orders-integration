@@ -56,16 +56,37 @@ function sessionDays(env) {
   return Number.isFinite(parsed) && parsed > 0 ? parsed : 30;
 }
 
-export async function createSessionCookie(env) {
+/**
+ * `Secure` is required in production but breaks local development: over plain
+ * http://localhost some browsers (Safari notably) silently drop a Secure
+ * cookie, so login succeeds and every request after it is a 401. Deriving the
+ * flag from the request scheme keeps production strict and localhost working.
+ */
+export function isSecureRequest(request) {
+  return new URL(request.url).protocol === 'https:';
+}
+
+function attributes(secure, maxAge) {
+  return [
+    'HttpOnly',
+    secure ? 'Secure' : null,
+    'SameSite=Lax',
+    'Path=/',
+    `Max-Age=${maxAge}`,
+  ].filter(Boolean).join('; ');
+}
+
+export async function createSessionCookie(env, secure = true) {
   const maxAge = sessionDays(env) * 24 * 60 * 60;
   const expires = Math.floor(Date.now() / 1000) + maxAge;
   const signature = toBase64Url(await hmac(env.SESSION_SECRET, `session:${expires}`));
   const token = `${expires}.${signature}`;
-  return `${SESSION_COOKIE}=${token}; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=${maxAge}`;
+  return `${SESSION_COOKIE}=${token}; ${attributes(secure, maxAge)}`;
 }
 
-export function clearSessionCookie() {
-  return `${SESSION_COOKIE}=; HttpOnly; Secure; SameSite=Lax; Path=/; Max-Age=0`;
+/** Attributes must match the cookie being cleared or some browsers keep it. */
+export function clearSessionCookie(secure = true) {
+  return `${SESSION_COOKIE}=; ${attributes(secure, 0)}`;
 }
 
 function readCookie(request, name) {

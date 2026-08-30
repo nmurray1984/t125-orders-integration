@@ -120,6 +120,13 @@ python square_orders.py --output d1
 where you will need to allow http -- either relax that check temporarily or use
 `seed_local.py` instead.
 
+### "Signed in, but your browser did not keep the session cookie"
+
+The session cookie is marked `Secure` only when the request came over https, so
+local http works in every browser. If you still see this, something in the
+browser is blocking cookies for the site -- check for a strict privacy setting
+or an extension, or try a private window.
+
 ### If you lock yourself out
 
 Local requests have no `CF-Connecting-IP`, so every one of them shares a single

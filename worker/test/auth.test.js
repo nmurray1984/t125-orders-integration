@@ -7,6 +7,7 @@ import {
   createSessionCookie,
   hasValidSession,
   hasValidSyncToken,
+  isSecureRequest,
   passwordMatches,
 } from '../src/auth.js';
 import { ROSTER_COLUMNS, toCsv } from '../src/csv.js';
@@ -44,6 +45,24 @@ test('a fresh session cookie validates', async () => {
   assert.match(setCookie, /Secure/);
   assert.match(setCookie, /SameSite=Lax/);
   assert.equal(await hasValidSession(env, requestWithCookie(token)), true);
+});
+
+test('Secure is set for https and omitted for http', () => {
+  assert.equal(isSecureRequest(new Request('https://roster.test/api/login')), true);
+  assert.equal(isSecureRequest(new Request('http://127.0.0.1:8787/api/login')), false);
+});
+
+test('an insecure-origin cookie still validates', async () => {
+  // Dropping Secure for localhost must not weaken the signature check.
+  const setCookie = await createSessionCookie(env, false);
+  assert.doesNotMatch(setCookie, /Secure/);
+  assert.match(setCookie, /HttpOnly/);
+  assert.equal(await hasValidSession(env, requestWithCookie(setCookie.split(';')[0])), true);
+});
+
+test('logout cookie matches the scheme it was set for', () => {
+  assert.match(clearSessionCookie(true), /Secure/);
+  assert.doesNotMatch(clearSessionCookie(false), /Secure/);
 });
 
 test('a tampered session cookie is rejected', async () => {

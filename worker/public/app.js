@@ -140,15 +140,29 @@ el('login-form').addEventListener('submit', async (event) => {
       body: JSON.stringify({ password: el('password').value }),
     });
 
-    if (response.ok) {
-      el('password').value = '';
-      await enterApp();
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      error.textContent = body.error || 'Sign in failed.';
+      error.hidden = false;
       return;
     }
 
-    const body = await response.json().catch(() => ({}));
-    error.textContent = body.error || 'Sign in failed.';
-    error.hidden = false;
+    el('password').value = '';
+
+    // Loading the roster is a separate failure mode from signing in. A 401 here
+    // means the session cookie was set but not sent back -- say that, rather
+    // than blaming the network and sending someone hunting the wrong problem.
+    try {
+      await enterApp();
+    } catch (loadError) {
+      show('login');
+      error.textContent =
+        loadError.message === 'unauthorized'
+          ? 'Signed in, but your browser did not keep the session cookie. ' +
+            'Check that cookies are enabled for this site.'
+          : 'Signed in, but the roster could not be loaded.';
+      error.hidden = false;
+    }
   } catch {
     error.textContent = 'Could not reach the server. Try again.';
     error.hidden = false;
