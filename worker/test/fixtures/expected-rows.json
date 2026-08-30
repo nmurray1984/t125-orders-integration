@@ -1,6 +1,8 @@
 [
   {
     "cell_phone": "",
+    "customer_id": "",
+    "email": "john.smith@example.com",
     "emergency_contact": "",
     "emergency_contact_phone": "",
     "line_item_name": "Camp Registration",
@@ -17,6 +19,8 @@
   },
   {
     "cell_phone": "",
+    "customer_id": "",
+    "email": "jane.doe@example.com",
     "emergency_contact": "Alice Doe",
     "emergency_contact_phone": "",
     "line_item_name": "Camp Registration",
@@ -33,6 +37,8 @@
   },
   {
     "cell_phone": "",
+    "customer_id": "CUSTOMER_3",
+    "email": "",
     "emergency_contact": "",
     "emergency_contact_phone": "",
     "line_item_name": "Camp Registration",
@@ -49,6 +55,8 @@
   },
   {
     "cell_phone": "",
+    "customer_id": "",
+    "email": "",
     "emergency_contact": "",
     "emergency_contact_phone": "",
     "line_item_name": "Camp Registration",
@@ -65,6 +73,8 @@
   },
   {
     "cell_phone": "",
+    "customer_id": "",
+    "email": "",
     "emergency_contact": "",
     "emergency_contact_phone": "",
     "line_item_name": "Camp Registration",

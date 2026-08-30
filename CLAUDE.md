@@ -168,6 +168,17 @@ otherwise a date is parsed out of the campout name when present (ISO, `Nov 14`, 
 future campout is flagged `upcoming` and is what `/` opens on. With no parseable
 dates anywhere it falls back to the campout with the most recent signup activity.
 
+**Buyer email**: taken from a fulfillment recipient
+(`pickup_details`/`shipment_details`/`delivery_details`), falling back to a
+`/v2/customers/{id}` read for orders that carry only a `customer_id`. The
+fallback is deduplicated per customer and never fails a sync.
+
+**Schema changes**: `npm run db:init` runs `scripts/migrate.mjs`, which applies
+`schema.sql` and then adds any missing columns listed in `ADDED_COLUMNS`. New
+columns go in both places -- the `CREATE TABLE` for fresh databases and
+`ADDED_COLUMNS` for existing ones. A bare `ALTER TABLE ... ADD COLUMN` in
+schema.sql breaks re-runs, since SQLite has no IF NOT EXISTS for columns.
+
 **Upsert semantics**: `first_seen_at` is preserved on conflict; every other column
 plus `synced_at` is overwritten. Syncs never delete, so the rolling Square fetch
 window cannot drop history.

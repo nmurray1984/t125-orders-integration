@@ -24,6 +24,8 @@ export function toCsv(headers, rows) {
 
 export const ROSTER_COLUMNS = [
   { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email' },
+  { key: 'order_created_at', label: 'Ordered At' },
   { key: 'rank', label: 'Rank' },
   { key: 'patrol', label: 'Patrol' },
   { key: 'cell_phone', label: 'Cell Phone' },
@@ -33,6 +35,5 @@ export const ROSTER_COLUMNS = [
   { key: 'campout', label: 'Campout' },
   { key: 'variation_name', label: 'Registration Type' },
   { key: 'total_money', label: 'Total Paid' },
-  { key: 'order_created_at', label: 'Ordered At' },
   { key: 'order_id', label: 'Order ID' },
 ];

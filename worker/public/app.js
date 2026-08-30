@@ -76,6 +76,24 @@ function formatCampoutDate(startsAt) {
   });
 }
 
+function emailLink(value) {
+  const link = document.createElement('a');
+  link.href = `mailto:${value}`;
+  link.textContent = value;
+  return link;
+}
+
+/** Short local date; the full timestamp stays available on hover. */
+function formatOrderedAt(value) {
+  if (!value) return { text: '', title: '' };
+  const when = new Date(value);
+  if (Number.isNaN(when.getTime())) return { text: String(value), title: String(value) };
+  return {
+    text: when.toLocaleDateString(undefined, { month: 'short', day: 'numeric', year: 'numeric' }),
+    title: when.toLocaleString(),
+  };
+}
+
 function phoneLink(value) {
   const digits = String(value || '').replace(/[^\d+]/g, '');
   if (digits.length < 7) return document.createTextNode(value || '');
@@ -121,12 +139,14 @@ function renderTotals(patrols, headcount) {
 
 const COLUMNS = [
   { key: 'name', label: 'Name' },
+  { key: 'email', label: 'Email', email: true },
   { key: 'rank', label: 'Rank' },
   { key: 'patrol', label: 'Patrol' },
   { key: 'cell_phone', label: 'Cell', phone: true },
   { key: 'emergency_contact', label: 'Emergency contact' },
   { key: 'emergency_contact_phone', label: 'Emergency phone', phone: true },
   { key: 'travel_to_campout', label: 'Travels w/ troop' },
+  { key: 'order_created_at', label: 'Ordered', date: true },
 ];
 
 const byName = (a, b) => (a.name || '').localeCompare(b.name || '');
@@ -141,8 +161,11 @@ const SORTS = {
     };
     return rank(a) - rank(b) || byName(a, b);
   },
+  // RFC3339 sorts correctly as a string, so no parsing needed.
   recent: (a, b) =>
     String(b.order_created_at || '').localeCompare(String(a.order_created_at || '')) || byName(a, b),
+  oldest: (a, b) =>
+    String(a.order_created_at || '').localeCompare(String(b.order_created_at || '')) || byName(a, b),
 };
 
 /**
@@ -158,9 +181,31 @@ function renderRows(rows) {
 
     for (const column of COLUMNS) {
       const td = document.createElement('td');
-      td.dataset.label = column.label;
       const value = row[column.key] || '';
       if (!value) td.dataset.empty = 'true';
+
+      // A real element rather than a ::before, so the card layout's labels are
+      // readable by screen readers once the header row is gone on mobile.
+      if (column.key !== 'name') {
+        const label = document.createElement('span');
+        label.className = 'cell-label';
+        label.textContent = column.label;
+        td.append(label);
+      }
+
+      if (column.date) {
+        const { text: shown, title } = formatOrderedAt(value);
+        if (title) td.title = title;
+        td.append(document.createTextNode(shown));
+        tr.append(td);
+        continue;
+      }
+
+      if (column.email && value) {
+        td.append(emailLink(value));
+        tr.append(td);
+        continue;
+      }
 
       if (column.key === 'name') {
         const name = document.createElement('span');
@@ -188,11 +233,20 @@ function renderRows(rows) {
   el('empty').hidden = rows.length > 0;
 }
 
+/** What a search term is matched against: raw values, plus what a date column
+    actually shows, so typing "Aug" finds August signups. */
+function searchableText(row) {
+  return COLUMNS.map((column) => {
+    const value = row[column.key] || '';
+    if (!value) return '';
+    return column.date ? `${value} ${formatOrderedAt(value).text}` : String(value);
+  }).join(' ').toLowerCase();
+}
+
 function applyView() {
   const term = el('search').value.trim().toLowerCase();
   const filtered = term
-    ? allRows.filter((row) =>
-        COLUMNS.some((c) => String(row[c.key] || '').toLowerCase().includes(term)))
+    ? allRows.filter((row) => searchableText(row).includes(term))
     : allRows;
 
   const sorted = [...filtered].sort(SORTS[el('sort').value] || byName);

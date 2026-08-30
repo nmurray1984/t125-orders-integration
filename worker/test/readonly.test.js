@@ -28,6 +28,23 @@ const WRITE_ENDPOINTS = [
   '/v2/inventory/changes/batch-create',
 ];
 
+test('a customer lookup is allowed; anything else under /v2/customers is not', async () => {
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async () => Response.json({ customer: { email_address: 'a@b.test' } });
+  try {
+    // GET one customer by id: a read, needed for orders with no fulfillment.
+    await callSquare(config, '/v2/customers/ABC123');
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  // The collection endpoint creates customers, so it stays refused.
+  await assert.rejects(() => callSquare(config, '/v2/customers', {}),
+    /only reads from Square/);
+  await assert.rejects(() => callSquare(config, '/v2/customers/ABC/cards', {}),
+    /only reads from Square/);
+});
+
 test('the allowlist contains only the three reads we need', () => {
   assert.deepEqual([...READ_ONLY_ENDPOINTS].sort(), [
     '/v2/catalog/batch-retrieve',

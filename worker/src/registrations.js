@@ -25,6 +25,8 @@ export const REGISTRATION_FIELDS = [
   'travel_to_campout',
   'total_money',
   'order_created_at',
+  'email',
+  'customer_id',
 ];
 
 const DEFAULT_PATROL = 'Rocking Chair';
@@ -56,6 +58,8 @@ export function buildRegistration(parsed) {
     travel_to_campout: parsed.travel_to_campout || '',
     total_money: parsed.total_money || '',
     order_created_at: parsed.order_created_at || '',
+    email: parsed.email || '',
+    customer_id: parsed.customer_id || '',
   };
 }
 

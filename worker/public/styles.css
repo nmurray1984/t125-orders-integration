@@ -242,6 +242,10 @@ button[disabled] { opacity: .6; cursor: progress; }
 
 table { border-collapse: collapse; width: 100%; font-size: .9rem; }
 th, td { text-align: left; padding: .6rem .75rem; border-bottom: 1px solid var(--border); }
+/* Nine columns will not fit every screen. Let the wrapper scroll rather than
+   wrapping names, phone numbers and dates onto two lines. */
+th, td { white-space: nowrap; }
+.cell-label { display: none; }
 th { font-size: .72rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); white-space: nowrap; }
 tbody tr:nth-child(even) { background: var(--row-alt); }
 tbody tr:last-child td { border-bottom: none; }
@@ -263,7 +267,22 @@ td a { color: inherit; }
   .tile { flex: 1 1 calc(50% - .75rem); min-width: 0; }
 
   .table-wrap { border: none; background: transparent; overflow: visible; }
-  thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+  /* Cards, not rows: the header no longer describes the layout, and each cell
+     carries its own label instead. Kept out of the layout entirely -- a
+     visually-hidden thead still lays its row out full width and pushes the
+     page sideways. */
+  thead { display: none; }
+
+  .cell-label {
+    display: block;
+    font-size: .72rem;
+    font-weight: 700;
+    letter-spacing: .03em;
+    text-transform: uppercase;
+    color: var(--muted);
+    min-width: 7.5rem;
+    flex-shrink: 0;
+  }
 
   tbody tr {
     display: block;
@@ -275,16 +294,18 @@ td a { color: inherit; }
   }
   tbody tr:nth-child(even) { background: var(--surface); }
 
-  td { border: none; padding: 0; display: flex; gap: .6rem; align-items: baseline; }
-  td::before {
-    content: attr(data-label);
-    font-size: .72rem;
-    font-weight: 700;
-    letter-spacing: .03em;
-    text-transform: uppercase;
-    color: var(--muted);
-    min-width: 7.5rem;
-    flex-shrink: 0;
+  /* flex-wrap so a long value (an email, typically) drops to its own line
+     rather than being squeezed into the space beside its label and broken
+     mid-word. */
+  td {
+    border: none;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0 .6rem;
+    align-items: baseline;
+    white-space: normal;
+    overflow-wrap: anywhere;
   }
   td + td { margin-top: .3rem; }
   td[data-empty]:not(:first-child) { display: none; }
@@ -296,14 +317,15 @@ td a { color: inherit; }
     padding-bottom: .55rem;
     border-bottom: 1px solid var(--border);
   }
-  td:first-child::before { content: none; }
+
   .person-name { font-size: 1.1rem; font-weight: 700; display: block; }
   .tags { display: flex; margin-top: .35rem; }
 
-  /* Rank and patrol already read as tags above; don't repeat them.
+  /* Column order: name, email, rank, patrol, cell, contact, phone, travel,
+     ordered. Rank and patrol already read as tags above the card, and
      "Travels w/ troop: Yes" is the expected case on nearly every card -- the
-     "Own transport" tag calls out the exception, so the row is just noise. */
-  td:nth-child(2), td:nth-child(3), td:nth-child(7) { display: none; }
+     "Own transport" tag calls out the exception, so that row is just noise. */
+  td:nth-child(3), td:nth-child(4), td:nth-child(8) { display: none; }
   td a { font-weight: 600; }
 
   #logout { padding: .45rem .7rem; font-size: .85rem; align-self: start; }

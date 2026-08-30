@@ -41,6 +41,24 @@ def get_location_id():
     return _location_id if _location_id is not None else Config.SQUARE_LOCATION_ID
 
 
+# Square puts the buyer's email in different places depending on how the order
+# was created, so check each fulfillment's recipient in turn. Orders that carry
+# only a customer_id need a separate Customers lookup, which the Worker does.
+FULFILLMENT_DETAIL_FIELDS = ('pickup_details', 'shipment_details', 'delivery_details')
+
+
+def extract_order_email(order):
+    """Best available email for whoever placed the order, or ''."""
+    for fulfillment in getattr(order, 'fulfillments', None) or []:
+        for field in FULFILLMENT_DETAIL_FIELDS:
+            details = getattr(fulfillment, field, None)
+            recipient = getattr(details, 'recipient', None) if details else None
+            email = getattr(recipient, 'email_address', None) if recipient else None
+            if email:
+                return email
+    return ''
+
+
 # Square hands out several credential types that all look like opaque strings.
 # Pasting the wrong one is the most common cause of a 401, and the prefix gives
 # it away without us ever printing the secret.
@@ -241,6 +259,9 @@ def extract_order_data(orders, modifier_details):
         order_created_at = getattr(order, 'created_at', None) or ''
         if order_created_at and not isinstance(order_created_at, str):
             order_created_at = str(order_created_at)
+
+        email = extract_order_email(order)
+        customer_id = getattr(order, 'customer_id', None) or ''
         
         if hasattr(order, 'line_items') and order.line_items:
             for line_item in order.line_items:
@@ -252,6 +273,8 @@ def extract_order_data(orders, modifier_details):
                     'order_id': order_id,
                     'line_item_uid': getattr(line_item, 'uid', '') or '',
                     'order_created_at': order_created_at,
+                    'email': email,
+                    'customer_id': customer_id,
                     'total_money': total_money,
                     'line_item_name': line_item_name,
                     'variation_name': getattr(line_item, 'variation_name', '') or '',
@@ -398,8 +421,9 @@ def write_csv_to_stdout(order_data):
         return
 
     # Define column headers with combined 'Name' column
-    headers = ['Order ID', 'Total Money', 'Line Item Name', 'Name', 'Rank', 'Patrol',
-               'Emergency Contact', 'Emergency Contact Phone', 'Cell Phone', 'Travel to Campout']
+    headers = ['Order ID', 'Ordered At', 'Total Money', 'Line Item Name', 'Name', 'Email',
+               'Rank', 'Patrol', 'Emergency Contact', 'Emergency Contact Phone',
+               'Cell Phone', 'Travel to Campout']
 
     # Create a CSV writer that writes to stdout
     writer = csv.DictWriter(sys.stdout, fieldnames=headers)
@@ -416,9 +440,11 @@ def write_csv_to_stdout(order_data):
         # Create a new dictionary with properly formatted keys
         csv_row = {
             'Order ID': row['order_id'],
+            'Ordered At': row.get('order_created_at', ''),
             'Total Money': row['total_money'],
             'Line Item Name': row['line_item_name'],
             'Name': name,
+            'Email': row.get('email', ''),
             'Rank': row['rank'],
             'Patrol': patrol,
             'Emergency Contact': row['emergency_contact'],

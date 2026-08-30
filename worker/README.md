@@ -59,8 +59,13 @@ npm run db:init
 ```
 
 This is the remote database. `db:init:local` is the local one -- different
-database, and easy to confuse. Safe to re-run; every statement is
-`CREATE TABLE IF NOT EXISTS`.
+database, and easy to confuse.
+
+Safe to re-run, and safe on an existing database: it applies `schema.sql`
+(every CREATE is IF NOT EXISTS) and then adds any columns an older database is
+missing. SQLite has no `ADD COLUMN IF NOT EXISTS`, so `scripts/migrate.mjs`
+checks what is actually there rather than issuing a bare ALTER that would fail
+the second time. Run it after pulling a change that touches the schema.
 
 ### 4. Set the secrets
 
@@ -136,13 +141,16 @@ The sync only reads. Three endpoints, enforced by an allowlist in
 | `/v2/orders/search` | POST | reads recent orders for the location |
 | `/v2/catalog/batch-retrieve` | POST | reads the modifier objects those orders reference |
 | `/v2/locations` | GET | lists locations, for the credential check |
+| `/v2/customers/{id}` | GET | reads one buyer's email, for orders that carry only a customer_id |
 
 Two are POSTs, which reads as alarming but is not: Square takes search and
 batch-retrieve criteria as a request body, so the verb says nothing about
 whether anything changes. No order is created, modified, cancelled, paid or
 refunded; no catalog item is touched; no customer record is written.
 
-Any other path is refused before a request leaves the Worker, so introducing a
+`/v2/customers` itself (which creates customers) and anything below a customer
+stay refused; only the single-customer read is allowed. Any other path is
+refused before a request leaves the Worker, so introducing a
 write would mean deliberately editing the allowlist. `test/readonly.test.js`
 asserts this against a list of real Square write endpoints, and
 `test_d1_sync.py` does the same for the Python CLI.
@@ -181,6 +189,20 @@ signup activity.
 
 Anyone with the troop password can edit setup -- the same trust level as
 reading the roster.
+
+## Where the email comes from
+
+Square exposes the buyer's email through a fulfillment recipient, and which
+kind depends on how the order was placed, so the sync checks `pickup_details`,
+`shipment_details` and `delivery_details` in turn. Orders that carry only a
+`customer_id` get one extra read against `/v2/customers/{id}`, deduplicated per
+customer and best-effort -- a lookup that fails leaves the email blank rather
+than failing the whole sync.
+
+If emails come back empty across the board, the orders are shaped differently
+than expected. `python square_orders.py --square-env production --output stdout`
+prints an Email column, which is the quickest way to see whether anything is
+coming through.
 
 ## The scheduled sync
 

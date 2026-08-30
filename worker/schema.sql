@@ -18,6 +18,8 @@ CREATE TABLE IF NOT EXISTS registrations (
   emergency_contact_phone TEXT NOT NULL DEFAULT '',
   cell_phone              TEXT NOT NULL DEFAULT '',
   travel_to_campout       TEXT NOT NULL DEFAULT '',
+  email                   TEXT NOT NULL DEFAULT '',
+  customer_id             TEXT NOT NULL DEFAULT '',
   total_money             TEXT NOT NULL DEFAULT '',
   order_created_at        TEXT NOT NULL DEFAULT '',
   first_seen_at           TEXT NOT NULL DEFAULT '',
@@ -76,3 +78,4 @@ CREATE TABLE IF NOT EXISTS registration_types (
 
 CREATE INDEX IF NOT EXISTS idx_registration_types_campout
   ON registration_types (campout_id);
+

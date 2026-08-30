@@ -23,12 +23,31 @@ class MockLineItem:
         self.variation_name = variation_name
         self.modifiers = modifiers or []
 
+class MockRecipient:
+    def __init__(self, email_address=None, display_name=None):
+        self.email_address = email_address
+        self.display_name = display_name
+
+class MockFulfillmentDetails:
+    def __init__(self, recipient=None):
+        self.recipient = recipient
+
+class MockFulfillment:
+    """Square exposes the buyer's email through a fulfillment recipient."""
+    def __init__(self, pickup_details=None, shipment_details=None, delivery_details=None):
+        self.pickup_details = pickup_details
+        self.shipment_details = shipment_details
+        self.delivery_details = delivery_details
+
 class MockOrder:
-    def __init__(self, id, total_money, line_items=None, created_at=None):
+    def __init__(self, id, total_money, line_items=None, created_at=None,
+                 fulfillments=None, customer_id=None):
         self.id = id
         self.total_money = total_money
         self.line_items = line_items or []
         self.created_at = created_at or "2026-08-01T12:00:00Z"
+        self.fulfillments = fulfillments or []
+        self.customer_id = customer_id
 
 class MockModifierData:
     def __init__(self, name, modifier_list_id=None):
@@ -58,6 +77,9 @@ class MockAPIResponse:
 mock_orders_response = MockAPIResponse(
     orders=[
         MockOrder(
+            fulfillments=[MockFulfillment(
+                pickup_details=MockFulfillmentDetails(
+                    MockRecipient(email_address="john.smith@example.com")))],
             id="ORDER_1",
             total_money=MockMoney(15000, "USD"),
             line_items=[
@@ -83,6 +105,9 @@ mock_orders_response = MockAPIResponse(
             ]
         ),
         MockOrder(
+            fulfillments=[MockFulfillment(
+                shipment_details=MockFulfillmentDetails(
+                    MockRecipient(email_address="jane.doe@example.com")))],
             id="ORDER_2",
             total_money=MockMoney(25000, "USD"),
             line_items=[
@@ -113,6 +138,7 @@ mock_orders_response = MockAPIResponse(
             ]
         ),
         MockOrder(
+            customer_id="CUSTOMER_3",
             id="ORDER_3",
             total_money=MockMoney(10000, "USD"),
             line_items=[
