@@ -126,6 +126,29 @@ Auto-deploy only fires on `main`, so the **first** deploy is the manual one in
 step 5 -- run it from whatever branch you are on, then merge to `main` and
 every deploy after that is automatic.
 
+## What it does to your Square account: nothing
+
+The sync only reads. Three endpoints, enforced by an allowlist in
+`src/square.js` rather than left to convention:
+
+| Endpoint | Verb | What it does |
+| --- | --- | --- |
+| `/v2/orders/search` | POST | reads recent orders for the location |
+| `/v2/catalog/batch-retrieve` | POST | reads the modifier objects those orders reference |
+| `/v2/locations` | GET | lists locations, for the credential check |
+
+Two are POSTs, which reads as alarming but is not: Square takes search and
+batch-retrieve criteria as a request body, so the verb says nothing about
+whether anything changes. No order is created, modified, cancelled, paid or
+refunded; no catalog item is touched; no customer record is written.
+
+Any other path is refused before a request leaves the Worker, so introducing a
+write would mean deliberately editing the allowlist. `test/readonly.test.js`
+asserts this against a list of real Square write endpoints, and
+`test_d1_sync.py` does the same for the Python CLI.
+
+Everything the sync writes goes to **your D1 database**, never back to Square.
+
 ## The scheduled sync
 
 `[triggers] crons` in `wrangler.toml` runs the sync hourly except 1am-5am CST,

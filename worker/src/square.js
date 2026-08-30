@@ -19,6 +19,24 @@ const DEFAULT_API_VERSION = '2025-01-23';
 // Square caps batch-retrieve at 1000 ids; stay well under it.
 const CATALOG_BATCH_SIZE = 500;
 
+/**
+ * Every Square endpoint this Worker is allowed to touch. All three are reads.
+ *
+ * Two of them are POSTs, which looks alarming but is not: Square takes search
+ * and batch-retrieve criteria as a request body, so the verb says nothing
+ * about whether anything changes. Nothing here creates, updates, deletes,
+ * cancels, pays or refunds.
+ *
+ * This is enforced, not just documented -- request() rejects any path not on
+ * the list, so adding a write would have to be a deliberate edit here rather
+ * than a line slipped in somewhere else.
+ */
+const ALLOWED_ENDPOINTS = new Set([
+  '/v2/orders/search',        // read: recent orders for a location
+  '/v2/catalog/batch-retrieve', // read: modifier + modifier list objects
+  '/v2/locations',            // read: locations this token can see
+]);
+
 export class SquareError extends Error {
   constructor(status, detail) {
     super(`HTTP ${status}: ${detail}`);
@@ -38,17 +56,27 @@ export function squareConfig(env) {
   };
 }
 
-async function post(config, path, body) {
-  const response = await fetch(`${config.host}${path}`, {
-    method: 'POST',
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      'Square-Version': config.apiVersion,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify(body),
-  });
+async function request(config, path, body) {
+  if (!ALLOWED_ENDPOINTS.has(path)) {
+    throw new Error(
+      `Refusing to call ${path}: this Worker only reads from Square. `
+      + `Add it to ALLOWED_ENDPOINTS in square.js if that is genuinely intended.`,
+    );
+  }
 
+  const headers = {
+    Authorization: `Bearer ${config.token}`,
+    'Square-Version': config.apiVersion,
+  };
+
+  const options = { method: 'GET', headers };
+  if (body !== undefined) {
+    options.method = 'POST';
+    headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify(body);
+  }
+
+  const response = await fetch(`${config.host}${path}`, options);
   const payload = await response.json().catch(() => ({}));
 
   if (!response.ok) {
@@ -63,6 +91,8 @@ async function post(config, path, body) {
   return payload;
 }
 
+export const READ_ONLY_ENDPOINTS = ALLOWED_ENDPOINTS;
+
 /** Recent orders for the configured location, newest first. */
 export async function searchOrders(config) {
   const orders = [];
@@ -75,7 +105,7 @@ export async function searchOrders(config) {
     };
     if (cursor) body.cursor = cursor;
 
-    const page = await post(config, '/v2/orders/search', body);
+    const page = await request(config, '/v2/orders/search', body);
     orders.push(...(page.orders || []));
     cursor = page.cursor;
   } while (cursor && orders.length < config.fetchLimit);
@@ -99,7 +129,7 @@ export async function fetchCatalogObjects(config, idsByVersion) {
       // Orders from an unversioned line item come back without one.
       if (version !== undefined && version !== null) body.catalog_version = version;
 
-      const page = await post(config, '/v2/catalog/batch-retrieve', body);
+      const page = await request(config, '/v2/catalog/batch-retrieve', body);
       for (const object of page.objects || []) objects[object.id] = object;
     }
   }
@@ -109,19 +139,11 @@ export async function fetchCatalogObjects(config, idsByVersion) {
 
 /** Locations this token can see -- used by the credential check. */
 export async function listLocations(config) {
-  const response = await fetch(`${config.host}/v2/locations`, {
-    headers: {
-      Authorization: `Bearer ${config.token}`,
-      'Square-Version': config.apiVersion,
-    },
-  });
-
-  const payload = await response.json().catch(() => ({}));
-  if (!response.ok) {
-    const detail = (payload.errors || []).map((e) => e.detail || e.code).join('; ')
-      || response.statusText;
-    throw new SquareError(response.status, detail);
-  }
-
+  const payload = await request(config, '/v2/locations');
   return payload.locations || [];
+}
+
+/** Exposed so tests can assert the Worker cannot reach a write endpoint. */
+export async function callSquare(config, path, body) {
+  return request(config, path, body);
 }

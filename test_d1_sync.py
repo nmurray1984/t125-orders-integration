@@ -252,6 +252,35 @@ def test_token_description():
     return all(results)
 
 
+def test_square_calls_are_read_only():
+    """The CLI must never call a Square method that changes seller data"""
+    print("\nTesting the CLI only reads from Square...")
+    import re
+
+    source = open(os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                               'square_orders.py')).read()
+
+    # Every Square SDK call, e.g. get_client().orders.search(
+    calls = set(re.findall(r'get_client\(\)\.([a-z_]+\.[a-z_]+)\(', source))
+
+    allowed = {
+        'orders.search',        # read: recent orders
+        'catalog.batch_get',    # read: modifier + modifier list objects
+        'locations.list',       # read: locations this token can see
+    }
+
+    forbidden = re.findall(
+        r'get_client\(\)\.[a-z_]+\.(create|update|delete|upsert|pay|refund|cancel)',
+        source)
+
+    return all([
+        check(f"only known read calls are made ({', '.join(sorted(calls))})",
+              calls <= allowed),
+        check("no create/update/delete/pay/refund calls", not forbidden),
+        check("all three reads are still present", calls == allowed),
+    ])
+
+
 def main():
     print("Running D1 sync tests...")
     print("=" * 60)
@@ -266,6 +295,7 @@ def main():
         test_sync_url_validation(),
         test_square_environment_selection(),
         test_token_description(),
+        test_square_calls_are_read_only(),
     ]
 
     print("\n" + "=" * 60)
