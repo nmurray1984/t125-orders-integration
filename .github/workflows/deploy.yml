@@ -51,6 +51,11 @@ jobs:
     needs: test
     if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
     runs-on: ubuntu-latest
+    # Environment secrets are only visible to jobs that name the environment.
+    # CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID live in "prod", the same
+    # place the old sync workflow kept its secrets. Without this line they
+    # arrive empty and wrangler falls back to an interactive login.
+    environment: prod
     steps:
       - uses: actions/checkout@v4
 

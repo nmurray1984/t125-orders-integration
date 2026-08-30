@@ -11,6 +11,7 @@ Never point this at a deployed Worker -- it writes obviously fake people.
 
 import argparse
 import json
+from datetime import datetime, timedelta
 import sys
 import urllib.request
 
@@ -47,6 +48,12 @@ def build_rows():
             counter += 1
             scout = f"{FIRST[counter % len(FIRST)]} {LAST[counter % len(LAST)]}"
             adult = i % 4 == 0
+            # Stagger signups across days so the date sort is visible.
+            ordered_at = (
+                datetime.fromisoformat(created_at.replace('Z', '+00:00'))
+                + timedelta(days=i % 5, hours=i % 7)
+            ).strftime('%Y-%m-%dT%H:%M:%SZ')
+
             rows.append({
                 'order_id': f'SEED_ORDER_{counter:03d}',
                 'line_item_uid': f'SEED_ITEM_{counter:03d}',
@@ -62,7 +69,11 @@ def build_rows():
                 'cell_phone': f'555-02{counter:02d}' if counter % 3 else '',
                 'travel_to_campout': 'Yes' if counter % 4 else 'No',
                 'total_money': '2500 USD' if adult else '1500 USD',
-                'order_created_at': created_at,
+                'order_created_at': ordered_at,
+                # A few blanks, so the UI is exercised with missing emails too.
+                'email': '' if counter % 7 == 0 else
+                         f"{scout.lower().replace(' ', '.')}@example.com",
+                'customer_id': f'CUST_{counter:03d}',
             })
     return rows
 

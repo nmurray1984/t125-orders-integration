@@ -62,7 +62,8 @@
             <option value="name">Name (A–Z)</option>
             <option value="patrol">Patrol, then name</option>
             <option value="rank">Rank, then name</option>
-            <option value="recent">Most recent signup</option>
+            <option value="recent">Ordered (newest first)</option>
+            <option value="oldest">Ordered (oldest first)</option>
           </select>
         </label>
         <div class="actions">
@@ -79,12 +80,14 @@
         <thead>
           <tr>
             <th scope="col">Name</th>
+            <th scope="col">Email</th>
             <th scope="col">Rank</th>
             <th scope="col">Patrol</th>
             <th scope="col">Cell</th>
             <th scope="col">Emergency contact</th>
             <th scope="col">Emergency phone</th>
             <th scope="col">Travels w/ troop</th>
+            <th scope="col">Ordered</th>
           </tr>
         </thead>
         <tbody id="roster-body"></tbody>

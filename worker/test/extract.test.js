@@ -118,3 +118,41 @@ test('every row carries a usable primary key', () => {
     assert.ok(row.line_item_uid, 'line_item_uid');
   }
 });
+
+test('the email comes from a pickup fulfillment recipient', () => {
+  const row = extractRows(orders, catalogById).find((r) => r.order_id === 'ORDER_1');
+  assert.equal(row.email, 'john.smith@example.com');
+});
+
+test('a shipment fulfillment works too', () => {
+  const row = extractRows(orders, catalogById).find((r) => r.order_id === 'ORDER_2');
+  assert.equal(row.email, 'jane.doe@example.com');
+});
+
+test('an order with only a customer_id has no inline email', () => {
+  // sync.js fills these in with a Customers lookup.
+  const row = extractRows(orders, catalogById).find((r) => r.order_id === 'ORDER_3');
+  assert.equal(row.email, '');
+  assert.equal(row.customer_id, 'CUSTOMER_3');
+});
+
+test('an order with no fulfillment and no customer yields empty, not undefined', () => {
+  const row = extractRows([{
+    id: 'O', created_at: '', total_money: null,
+    line_items: [{ uid: 'L', name: 'Camp' }],
+  }], {})[0];
+  assert.equal(row.email, '');
+  assert.equal(row.customer_id, '');
+});
+
+test('the first recipient with an email wins', () => {
+  const row = extractRows([{
+    id: 'O', created_at: '', total_money: null,
+    fulfillments: [
+      { pickup_details: { recipient: {} } },
+      { shipment_details: { recipient: { email_address: 'second@example.com' } } },
+    ],
+    line_items: [{ uid: 'L', name: 'Camp' }],
+  }], {})[0];
+  assert.equal(row.email, 'second@example.com');
+});

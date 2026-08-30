@@ -39,10 +39,22 @@ def money_json(money):
     return None if money is None else {'amount': money.amount, 'currency': money.currency}
 
 
+def fulfillment_json(fulfillment):
+    out = {}
+    for field in ('pickup_details', 'shipment_details', 'delivery_details'):
+        details = getattr(fulfillment, field, None)
+        recipient = getattr(details, 'recipient', None) if details else None
+        if recipient and getattr(recipient, 'email_address', None):
+            out[field] = {'recipient': {'email_address': recipient.email_address}}
+    return out
+
+
 def order_json(order):
     return {
         'id': order.id,
         'created_at': order.created_at,
+        'customer_id': getattr(order, 'customer_id', None) or '',
+        'fulfillments': [fulfillment_json(f) for f in getattr(order, 'fulfillments', None) or []],
         'total_money': money_json(order.total_money),
         'line_items': [
             {

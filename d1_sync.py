@@ -41,6 +41,8 @@ def build_row(row_data):
         'travel_to_campout': row_data.get('travel_to_campout', ''),
         'total_money': row_data.get('total_money', ''),
         'order_created_at': row_data.get('order_created_at', ''),
+        'email': row_data.get('email', ''),
+        'customer_id': row_data.get('customer_id', ''),
     }
 
 

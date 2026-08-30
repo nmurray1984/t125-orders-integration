@@ -19,6 +19,23 @@ const config = readFileSync(join(root, 'wrangler.toml'), 'utf8');
 
 const problems = [];
 
+// In CI there is nobody to answer an interactive login prompt, and wrangler's
+// own error arrives only after the upload starts. Say it up front instead.
+if (process.env.CI && process.env.npm_lifecycle_event === 'predeploy') {
+  const missing = ['CLOUDFLARE_API_TOKEN', 'CLOUDFLARE_ACCOUNT_ID']
+    .filter((name) => !process.env[name]);
+
+  if (missing.length) {
+    problems.push(
+      `${missing.join(' and ')} not set in this CI run.\n\n` +
+      '    Add them under Settings > Secrets and variables > Actions > Secrets:\n' +
+      '      CLOUDFLARE_API_TOKEN   Cloudflare dashboard > My Profile > API Tokens\n' +
+      '                             > Create Token > "Edit Cloudflare Workers"\n' +
+      '      CLOUDFLARE_ACCOUNT_ID  Cloudflare dashboard > Workers & Pages sidebar',
+    );
+  }
+}
+
 if (config.includes('REPLACE_WITH_YOUR_D1_DATABASE_ID')) {
   problems.push(
     'wrangler.toml still has the placeholder database_id.\n\n' +

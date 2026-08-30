@@ -29,11 +29,30 @@ const ANSWERABLE_WITHOUT_VALUE = new Set([
   'Scout Name', 'Scouter Name', 'Rank', 'Patrol',
 ]);
 
+/**
+ * Square exposes the buyer's email through a fulfillment recipient, and which
+ * kind of fulfillment depends on how the order was placed. Orders carrying
+ * only a customer_id need a separate Customers lookup (see sync.js).
+ */
+const FULFILLMENT_DETAILS = ['pickup_details', 'shipment_details', 'delivery_details'];
+
+export function extractOrderEmail(order) {
+  for (const fulfillment of order.fulfillments || []) {
+    for (const field of FULFILLMENT_DETAILS) {
+      const email = fulfillment?.[field]?.recipient?.email_address;
+      if (email) return email;
+    }
+  }
+  return '';
+}
+
 function emptyRow(order, lineItem, totalMoney) {
   return {
     order_id: order.id,
     line_item_uid: lineItem.uid || '',
     order_created_at: order.created_at || '',
+    email: extractOrderEmail(order),
+    customer_id: order.customer_id || '',
     total_money: totalMoney,
     line_item_name: lineItem.name || '',
     variation_name: lineItem.variation_name || '',

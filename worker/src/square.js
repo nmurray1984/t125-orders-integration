@@ -37,6 +37,9 @@ const ALLOWED_ENDPOINTS = new Set([
   '/v2/locations',            // read: locations this token can see
 ]);
 
+// Customer lookups are per-id, so the path varies; matched by shape instead.
+const CUSTOMER_PATH = /^\/v2\/customers\/[A-Za-z0-9_-]+$/;
+
 export class SquareError extends Error {
   constructor(status, detail) {
     super(`HTTP ${status}: ${detail}`);
@@ -57,7 +60,7 @@ export function squareConfig(env) {
 }
 
 async function request(config, path, body) {
-  if (!ALLOWED_ENDPOINTS.has(path)) {
+  if (!ALLOWED_ENDPOINTS.has(path) && !CUSTOMER_PATH.test(path)) {
     throw new Error(
       `Refusing to call ${path}: this Worker only reads from Square. `
       + `Add it to ALLOWED_ENDPOINTS in square.js if that is genuinely intended.`,
@@ -141,6 +144,21 @@ export async function fetchCatalogObjects(config, idsByVersion) {
 export async function listLocations(config) {
   const payload = await request(config, '/v2/locations');
   return payload.locations || [];
+}
+
+/**
+ * Look up one customer's email. Used only for orders that carry a customer_id
+ * but no fulfillment recipient. Returns '' rather than throwing: a missing
+ * email should never fail a sync.
+ */
+export async function fetchCustomerEmail(config, customerId) {
+  if (!/^[A-Za-z0-9_-]+$/.test(String(customerId || ''))) return '';
+  try {
+    const payload = await request(config, `/v2/customers/${customerId}`);
+    return payload.customer?.email_address || '';
+  } catch {
+    return '';
+  }
 }
 
 /** Exposed so tests can assert the Worker cannot reach a write endpoint. */

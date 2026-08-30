@@ -9,11 +9,32 @@
 
 import { extractRows, modifierIdsByVersion, modifierListIdsByVersion } from './extract.js';
 import { buildRegistration, normalizeRow, recordSync, upsertRows } from './registrations.js';
-import { fetchCatalogObjects, searchOrders, squareConfig } from './square.js';
+import { fetchCatalogObjects, fetchCustomerEmail, searchOrders, squareConfig } from './square.js';
 
 export function missingSquareConfig(env) {
   const missing = ['SQUARE_ACCESS_TOKEN', 'SQUARE_LOCATION_ID'].filter((key) => !env[key]);
   return missing.length ? missing : null;
+}
+
+/**
+ * Some orders carry a customer_id but no fulfillment recipient, so the email
+ * needs a Customers lookup. Deduplicated by customer, and best-effort: a
+ * lookup that fails leaves the email blank rather than failing the sync.
+ */
+async function fillMissingEmails(config, rows) {
+  const needed = new Set(
+    rows.filter((row) => !row.email && row.customer_id).map((row) => row.customer_id),
+  );
+  if (!needed.size) return;
+
+  const emails = new Map();
+  for (const customerId of needed) {
+    emails.set(customerId, await fetchCustomerEmail(config, customerId));
+  }
+
+  for (const row of rows) {
+    if (!row.email && row.customer_id) row.email = emails.get(row.customer_id) || '';
+  }
 }
 
 export async function runSync(env) {
@@ -40,6 +61,8 @@ export async function runSync(env) {
   );
 
   const parsed = extractRows(orders, catalogById);
+  await fillMissingEmails(config, parsed);
+
   const rows = parsed.map(buildRegistration).map(normalizeRow).filter(Boolean);
   const skipped = parsed.length - rows.length;
 
