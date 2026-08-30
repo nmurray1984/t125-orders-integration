@@ -1,0 +1,22 @@
+name = "t125-roster"
+main = "src/index.js"
+compatibility_date = "2026-08-01"
+
+# Static front end. Assets are served directly for non-/api/ paths.
+[assets]
+directory = "./public"
+binding = "ASSETS"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "t125-roster"
+# Replace with the id printed by: wrangler d1 create t125-roster
+database_id = "REPLACE_WITH_YOUR_D1_DATABASE_ID"
+
+[vars]
+SESSION_DAYS = "30"
+
+# Secrets are NOT set here. Set them once with:
+#   wrangler secret put TROOP_PASSWORD
+#   wrangler secret put SESSION_SECRET
+#   wrangler secret put SYNC_TOKEN

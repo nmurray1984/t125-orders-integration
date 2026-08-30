@@ -4,7 +4,9 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-This is a Python-based Square API integration project that fetches order data from Square's Orders API and extracts structured information (scout/scouter names, ranks, patrols, emergency contacts, etc.) from order modifiers. The data can be output as CSV to stdout or written directly to Google Sheets for automated camp registration management.
+This is a Python-based Square API integration project that fetches order data from Square's Orders API and extracts structured information (scout/scouter names, ranks, patrols, emergency contacts, etc.) from order modifiers. The data can be output as CSV to stdout, written to Google Sheets, or synced to a Cloudflare D1 database that backs a password-protected web roster (`worker/`).
+
+**Why D1 exists**: Square returns only a rolling window of recent orders, and the Sheets sync overwrites a single tab each run, so older campouts were lost -- hence the manual "one sheet per campout" workflow. D1 rows are upserted and never deleted, so campouts accumulate and the web UI filters by campout name.
 
 ## Key Commands
 
@@ -27,13 +29,30 @@ python square_orders.py --output stdout
 python square_orders.py --output sheets
 ```
 
-This fetches the most recent orders from Square and either outputs CSV data to stdout or writes to Google Sheets based on the `--output` flag.
+**Sync to Cloudflare D1 (web roster)**:
+```bash
+python square_orders.py --output d1
+```
+
+**Both Sheets and D1** (for running side by side during the migration):
+```bash
+python square_orders.py --output both
+```
 
 ### Run Tests
 ```bash
-python test_square_orders.py
+python test_square_orders.py   # modifier parsing, mock Square data
+python test_d1_sync.py         # D1 payload mapping, batching, retries
+cd worker && npm test          # Worker auth, session cookies, CSV escaping
 ```
-Runs unit tests using mock Square API data (no actual API calls).
+All tests use mocks/stubs -- no actual API calls.
+
+### Worker (local)
+```bash
+cd worker
+npm run db:init:local   # apply schema.sql to the local D1
+npm run dev             # wrangler dev, reads secrets from .dev.vars
+```
 
 ## Architecture
 
@@ -99,6 +118,37 @@ Runs unit tests using mock Square API data (no actual API calls).
   - Returns success/failure status
 
 **Configuration**: See config.py for all Google Sheets related environment variables
+
+### Cloudflare D1 / Worker Integration
+
+**Modules**: `d1_sync.py` (Python side), `worker/` (Cloudflare side)
+
+**Data flow**: `square_orders.py` extracts rows -> `d1_sync.build_rows()` maps them
+to the Worker payload -> batched `POST /api/sync` (bearer `SYNC_TOKEN`) -> Worker
+upserts into D1 -> web front end reads them back.
+
+**Primary key**: `(order_id, line_item_uid)`. `order_id` alone is NOT unique -- a
+single order can register several people, one per line item. `extract_order_data()`
+captures `line_item.uid` for this reason.
+
+**Campout partitioning**: `line_item_name` becomes the `campout` column. This
+assumes each campout is a distinct Square catalog item. If a single item is ever
+reused across campouts, partition on `order_created_at` instead.
+
+**Upsert semantics**: `first_seen_at` is preserved on conflict; every other column
+plus `synced_at` is overwritten. Syncs never delete, so the rolling Square fetch
+window cannot drop history.
+
+**Auth** (`worker/src/auth.js`):
+- Web UI: one shared `TROOP_PASSWORD`, compared by HMAC (timing-safe, length-blind).
+  Success issues an HMAC-signed HttpOnly session cookie; failures are rate limited
+  per IP (10 per 15 min) in the `login_attempts` table.
+- Sync endpoint: separate `SYNC_TOKEN` bearer header, also compared by HMAC.
+- Rotating `TROOP_PASSWORD` does not invalidate live sessions; rotating
+  `SESSION_SECRET` does.
+
+**CSV export** guards against spreadsheet formula injection by prefixing cells that
+start with `=`, `+`, `-`, or `@` -- roster data is user-supplied via Square modifiers.
 
 ### Testing Architecture
 
@@ -188,16 +238,25 @@ All configuration is managed through environment variables (see config.py). Set 
 
 ### GitHub Actions Automation
 
-The project includes a GitHub Actions workflow (`.github/workflows/nightly-sync.yml`) that runs nightly at 6 AM UTC.
+The project includes a GitHub Actions workflow (`.github/workflows/nightly-sync.yml`) that runs hourly except 1am-5am CST. It runs all three test suites before the sync job.
 
 **Setup**:
 1. Go to your GitHub repository > Settings > Secrets and variables > Actions
-2. Add the following secrets:
+2. Add the following **secrets**:
    - `SQUARE_ACCESS_TOKEN`
    - `SQUARE_LOCATION_ID`
-   - `GOOGLE_SHEET_ID`
    - `GOOGLE_CREDENTIALS_JSON`
-   - `SHEET_NAME` (optional)
-   - `WRITE_MODE` (optional)
+   - `D1_SYNC_TOKEN` (must match the Worker's `SYNC_TOKEN`)
+3. Add the following **variables**:
+   - `GOOGLE_SHEET_ID`
+   - `D1_SYNC_URL` (e.g. `https://t125-roster.<subdomain>.workers.dev/api/sync`)
+   - `OUTPUT_MODE` (`both` during migration, then `d1`)
+   - `SHEET_NAME`, `WRITE_MODE`, `SQUARE_FETCH_LIMIT` (optional)
 
-3. The workflow will run automatically every night and can also be triggered manually from the Actions tab.
+4. The workflow runs on its schedule and can also be triggered manually from the Actions tab.
+
+### Cloudflare Worker Setup
+
+See `worker/README.md`. The three Worker secrets are set with `wrangler secret put`:
+`TROOP_PASSWORD`, `SESSION_SECRET`, `SYNC_TOKEN`. They are unrelated to each other --
+do not reuse one for another.

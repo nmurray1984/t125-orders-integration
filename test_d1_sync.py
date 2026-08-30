@@ -1,0 +1,172 @@
+"""
+Tests for the Cloudflare D1 sync path, using mock Square data and a stubbed
+HTTP layer. No network calls, no live Worker.
+"""
+
+import json
+import sys
+import os
+from unittest import mock
+
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+
+from mock_square_data import get_mock_orders_response
+from square_orders import extract_order_data
+import d1_sync
+
+
+class FakeResponse:
+    def __init__(self, status_code, payload=None, text=''):
+        self.status_code = status_code
+        self.ok = 200 <= status_code < 300
+        self._payload = payload or {}
+        self.text = text
+
+    def json(self):
+        return self._payload
+
+
+def check(label, condition):
+    print(f"{'✓' if condition else '✗'} {label}")
+    return condition
+
+
+def test_build_rows_maps_fields():
+    """build_rows should produce the payload shape the Worker expects"""
+    print("\nTesting build_rows field mapping...")
+    order_data = extract_order_data(get_mock_orders_response().orders, {})
+    rows = d1_sync.build_rows(order_data)
+
+    results = [
+        check("every row has a composite key",
+              all(r['order_id'] and r['line_item_uid'] for r in rows)),
+        check("campout comes from the line item name",
+              all(r['campout'] == 'Camp Registration' for r in rows)),
+        check("composite keys are unique",
+              len({(r['order_id'], r['line_item_uid']) for r in rows}) == len(rows)),
+        check("order_created_at is carried through",
+              all(r['order_created_at'] for r in rows)),
+    ]
+    return all(results)
+
+
+def test_name_and_patrol_defaults():
+    """Name falls back to scouter_name; empty patrol defaults to Rocking Chair"""
+    print("\nTesting name fallback and patrol default...")
+    scouter_only = d1_sync.build_row({
+        'order_id': 'O1', 'line_item_uid': 'L1',
+        'scout_name': '', 'scouter_name': 'Bob Doe', 'patrol': '',
+    })
+    scout_wins = d1_sync.build_row({
+        'order_id': 'O1', 'line_item_uid': 'L1',
+        'scout_name': 'John Smith', 'scouter_name': 'Bob Doe', 'patrol': 'Eagle',
+    })
+
+    return all([
+        check("falls back to scouter_name", scouter_only['name'] == 'Bob Doe'),
+        check("empty patrol defaults to Rocking Chair",
+              scouter_only['patrol'] == 'Rocking Chair'),
+        check("scout_name takes priority", scout_wins['name'] == 'John Smith'),
+        check("explicit patrol is preserved", scout_wins['patrol'] == 'Eagle'),
+    ])
+
+
+def test_rows_without_keys_are_dropped():
+    """Rows missing order_id or line_item_uid cannot be upserted, so drop them"""
+    print("\nTesting rows without a primary key are dropped...")
+    rows = d1_sync.build_rows([
+        {'order_id': 'O1', 'line_item_uid': 'L1', 'scout_name': 'Keep Me'},
+        {'order_id': 'O2', 'line_item_uid': '', 'scout_name': 'No UID'},
+        {'order_id': '', 'line_item_uid': 'L3', 'scout_name': 'No Order'},
+    ])
+    return all([
+        check("only the complete row survives", len(rows) == 1),
+        check("the surviving row is the right one", rows[0]['name'] == 'Keep Me'),
+    ])
+
+
+def test_batching():
+    """Rows are split into batches and only the last one is marked final"""
+    print("\nTesting batching...")
+    order_data = [
+        {'order_id': f'O{i}', 'line_item_uid': f'L{i}', 'scout_name': f'Scout {i}'}
+        for i in range(450)
+    ]
+
+    with mock.patch.object(d1_sync.requests, 'post') as post:
+        post.return_value = FakeResponse(200, {'ok': True, 'upserted': 200})
+        ok = d1_sync.sync_to_d1(order_data, url='https://example.test/api/sync', token='t')
+
+    bodies = [json.loads(call.kwargs['data']) for call in post.call_args_list]
+
+    return all([
+        check("sync reports success", ok),
+        check("450 rows split into 3 batches of <=200", len(bodies) == 3),
+        check("batch sizes are 200/200/50",
+              [len(b['rows']) for b in bodies] == [200, 200, 50]),
+        check("only the last batch is final",
+              [b['final'] for b in bodies] == [False, False, True]),
+        check("bearer token is sent",
+              all(call.kwargs['headers']['Authorization'] == 'Bearer t'
+                  for call in post.call_args_list)),
+    ])
+
+
+def test_client_error_is_not_retried():
+    """A 4xx means the request is wrong; retrying would just hammer the Worker"""
+    print("\nTesting 4xx is not retried...")
+    rows = [{'order_id': 'O1', 'line_item_uid': 'L1', 'scout_name': 'A'}]
+
+    with mock.patch.object(d1_sync.requests, 'post') as post:
+        post.return_value = FakeResponse(401, text='unauthorized')
+        ok = d1_sync.sync_to_d1(rows, url='https://example.test/api/sync', token='bad')
+
+    return all([
+        check("sync reports failure", ok is False),
+        check("only one attempt was made", post.call_count == 1),
+    ])
+
+
+def test_server_error_is_retried():
+    """A 5xx is transient, so it should be retried before giving up"""
+    print("\nTesting 5xx is retried then succeeds...")
+    rows = [{'order_id': 'O1', 'line_item_uid': 'L1', 'scout_name': 'A'}]
+
+    with mock.patch.object(d1_sync.requests, 'post') as post, \
+            mock.patch.object(d1_sync.time, 'sleep'):
+        post.side_effect = [
+            FakeResponse(500, text='boom'),
+            FakeResponse(200, {'ok': True, 'upserted': 1}),
+        ]
+        ok = d1_sync.sync_to_d1(rows, url='https://example.test/api/sync', token='t')
+
+    return all([
+        check("sync eventually succeeds", ok),
+        check("it retried once", post.call_count == 2),
+    ])
+
+
+def main():
+    print("Running D1 sync tests...")
+    print("=" * 60)
+
+    results = [
+        test_build_rows_maps_fields(),
+        test_name_and_patrol_defaults(),
+        test_rows_without_keys_are_dropped(),
+        test_batching(),
+        test_client_error_is_not_retried(),
+        test_server_error_is_retried(),
+    ]
+
+    print("\n" + "=" * 60)
+    print(f"Passed: {sum(results)}/{len(results)}")
+    if all(results):
+        print("✓ All D1 sync tests passed!")
+    else:
+        print("✗ Some D1 sync tests failed.")
+    return all(results)
+
+
+if __name__ == "__main__":
+    sys.exit(0 if main() else 1)

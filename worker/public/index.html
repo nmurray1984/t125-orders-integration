@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex, nofollow">
+<title>Troop 125 Campout Roster</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<section id="login" class="gate" hidden>
+  <form id="login-form" class="card">
+    <h1>Troop 125 Roster</h1>
+    <p class="muted">Enter the troop password to view campout registrations.</p>
+    <label for="password">Password</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" required>
+    <button type="submit" id="login-button">Sign in</button>
+    <p id="login-error" class="error" role="alert" hidden></p>
+  </form>
+</section>
+
+<section id="app" hidden>
+  <header class="bar">
+    <div class="bar-main">
+      <h1>Campout Roster</h1>
+      <p id="sync-note" class="muted"></p>
+    </div>
+    <button type="button" id="logout" class="ghost">Sign out</button>
+  </header>
+
+  <div class="controls">
+    <label class="field">
+      <span>Campout</span>
+      <select id="campout"></select>
+    </label>
+    <label class="field grow">
+      <span>Search</span>
+      <input id="search" type="search" placeholder="Name, patrol, rank, phone…" autocomplete="off">
+    </label>
+    <div class="actions">
+      <a id="export" class="button" href="/api/export.csv" download>Download CSV</a>
+      <button type="button" id="print" class="ghost">Print</button>
+    </div>
+  </div>
+
+  <p id="summary" class="summary" aria-live="polite"></p>
+
+  <div class="table-wrap">
+    <table id="roster">
+      <thead>
+        <tr>
+          <th scope="col">Name</th>
+          <th scope="col">Rank</th>
+          <th scope="col">Patrol</th>
+          <th scope="col">Cell</th>
+          <th scope="col">Emergency contact</th>
+          <th scope="col">Emergency phone</th>
+          <th scope="col">Travels w/ troop</th>
+        </tr>
+      </thead>
+      <tbody id="roster-body"></tbody>
+    </table>
+  </div>
+
+  <p id="empty" class="empty" hidden>No registrations match.</p>
+</section>
+
+<script src="/app.js"></script>
+</body>
+</html>

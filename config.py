@@ -19,6 +19,10 @@ class Config:
     SHEET_NAME = os.getenv('SHEET_NAME', 'Sheet1')
     WRITE_MODE = os.getenv('WRITE_MODE', 'overwrite')  # 'overwrite' or 'append'
 
+    # Cloudflare D1 Configuration (via the roster Worker)
+    D1_SYNC_URL = os.getenv('D1_SYNC_URL', '')
+    D1_SYNC_TOKEN = os.getenv('D1_SYNC_TOKEN', '')
+
     @classmethod
     def validate_square_config(cls):
         """Validate required Square API configuration"""
@@ -40,4 +44,18 @@ class Config:
             sys.exit(1)
         if cls.WRITE_MODE not in ['overwrite', 'append']:
             print(f"Error: WRITE_MODE must be 'overwrite' or 'append', got '{cls.WRITE_MODE}'")
+            sys.exit(1)
+
+    @classmethod
+    def validate_d1_config(cls):
+        """Validate required Cloudflare D1 configuration"""
+        if not cls.D1_SYNC_URL:
+            print("Error: D1_SYNC_URL environment variable is required for D1 output")
+            sys.exit(1)
+        if not cls.D1_SYNC_URL.startswith('https://'):
+            print("Error: D1_SYNC_URL must be an https:// URL "
+                  "(the sync token is sent as a bearer header)")
+            sys.exit(1)
+        if not cls.D1_SYNC_TOKEN:
+            print("Error: D1_SYNC_TOKEN environment variable is required for D1 output")
             sys.exit(1)

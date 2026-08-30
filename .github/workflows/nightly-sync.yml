@@ -1,7 +1,7 @@
-name: Nightly Square to Google Sheets Sync
+name: Square Sync
 
 on:
-  # Run nightly at 6 AM UTC (1 AM EST / 10 PM PST)
+  # Hourly except 1am-5am CST
   schedule:
     - cron: '0 0-5,12-23 * * *'
 
@@ -9,15 +9,14 @@ on:
   workflow_dispatch:
 
 jobs:
-  sync:
+  test:
     runs-on: ubuntu-latest
-    environment: prod
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
       - name: Set up Python
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
@@ -26,7 +25,39 @@ jobs:
           pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Square to Google Sheets sync
+      - name: Run Python tests
+        run: |
+          python test_square_orders.py
+          python test_d1_sync.py
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+
+      - name: Run Worker tests
+        working-directory: worker
+        run: node --test test/*.test.js
+
+  sync:
+    needs: test
+    runs-on: ubuntu-latest
+    environment: prod
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Square sync
         env:
           SQUARE_ACCESS_TOKEN: ${{ secrets.SQUARE_ACCESS_TOKEN }}
           SQUARE_LOCATION_ID: ${{ secrets.SQUARE_LOCATION_ID }}
@@ -35,8 +66,13 @@ jobs:
           SHEET_NAME: ${{ vars.SHEET_NAME || 'Sheet1' }}
           WRITE_MODE: ${{ vars.WRITE_MODE || 'overwrite' }}
           SQUARE_FETCH_LIMIT: ${{ vars.SQUARE_FETCH_LIMIT || '50' }}
+          D1_SYNC_URL: ${{ vars.D1_SYNC_URL }}
+          D1_SYNC_TOKEN: ${{ secrets.D1_SYNC_TOKEN }}
+          # 'both' writes to Sheets and D1. Switch to 'd1' once you have
+          # stopped using the spreadsheet.
+          OUTPUT_MODE: ${{ vars.OUTPUT_MODE || 'both' }}
         run: |
-          python square_orders.py --output sheets
+          python square_orders.py --output "$OUTPUT_MODE"
 
       - name: Report execution time
         if: always()

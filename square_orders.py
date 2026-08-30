@@ -112,16 +112,25 @@ def extract_order_data(orders, modifier_details):
             total_money = f"{order.total_money.amount} {order.total_money.currency}"
         else:
             total_money = "0 USD"
+
+        # Square returns an RFC3339 string; normalize to str so it survives JSON encoding
+        order_created_at = getattr(order, 'created_at', None) or ''
+        if order_created_at and not isinstance(order_created_at, str):
+            order_created_at = str(order_created_at)
         
         if hasattr(order, 'line_items') and order.line_items:
             for line_item in order.line_items:
                 line_item_name = line_item.name
                 
-                # Initialize row with basic info
+                # Initialize row. line_item_uid makes (order_id, line_item_uid)
+                # unique: one order can register several people.
                 row = {
                     'order_id': order_id,
+                    'line_item_uid': getattr(line_item, 'uid', '') or '',
+                    'order_created_at': order_created_at,
                     'total_money': total_money,
                     'line_item_name': line_item_name,
+                    'variation_name': getattr(line_item, 'variation_name', '') or '',
                     'scout_name': '',
                     'scouter_name': '',
                     'rank': '',
@@ -303,15 +312,18 @@ def main():
     )
     parser.add_argument(
         '--output',
-        choices=['stdout', 'sheets'],
+        choices=['stdout', 'sheets', 'd1', 'both'],
         default='stdout',
-        help='Output mode: stdout (CSV to console) or sheets (Google Sheets)'
+        help='Output mode: stdout (CSV to console), sheets (Google Sheets), '
+             'd1 (Cloudflare D1 via the roster Worker), or both (sheets + d1)'
     )
     args = parser.parse_args()
 
     # Validate configuration based on output mode
-    if args.output == 'sheets':
+    if args.output in ('sheets', 'both'):
         Config.validate_google_sheets_config()
+    if args.output in ('d1', 'both'):
+        Config.validate_d1_config()
     Config.validate_square_config()
 
     print("Fetching recent orders from Square API...", file=sys.stderr)
@@ -333,15 +345,27 @@ def main():
     # Extract structured data for table
     order_data = extract_order_data(orders, modifier_details)
 
-    # Output based on mode
+    # Output based on mode. 'both' writes to Sheets and D1 so the two can run
+    # side by side during the migration; a failure in either is fatal.
+    failed = False
+
     if args.output == 'stdout':
         write_csv_to_stdout(order_data)
-    elif args.output == 'sheets':
+
+    if args.output in ('sheets', 'both'):
         from google_sheets import write_to_google_sheet, log_last_update
-        success = write_to_google_sheet(order_data)
-        if not success:
-            sys.exit(1)
-        log_last_update()
+        if write_to_google_sheet(order_data):
+            log_last_update()
+        else:
+            failed = True
+
+    if args.output in ('d1', 'both'):
+        from d1_sync import sync_to_d1
+        if not sync_to_d1(order_data):
+            failed = True
+
+    if failed:
+        sys.exit(1)
 
 if __name__ == "__main__":
     main()

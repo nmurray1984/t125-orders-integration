@@ -24,10 +24,11 @@ class MockLineItem:
         self.modifiers = modifiers or []
 
 class MockOrder:
-    def __init__(self, id, total_money, line_items=None):
+    def __init__(self, id, total_money, line_items=None, created_at=None):
         self.id = id
         self.total_money = total_money
         self.line_items = line_items or []
+        self.created_at = created_at or "2026-08-01T12:00:00Z"
 
 class MockModifierData:
     def __init__(self, name, modifier_list_id=None):
