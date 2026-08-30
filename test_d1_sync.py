@@ -281,6 +281,39 @@ def test_square_calls_are_read_only():
     ])
 
 
+def test_only_one_module_talks_to_square():
+    """square_orders.py should be the sole Square caller on the Python side"""
+    print("\nTesting where Square is reached from...")
+    import glob
+    import re
+
+    root = os.path.dirname(os.path.abspath(__file__))
+    callers = []
+    for path in glob.glob(os.path.join(root, '*.py')) + glob.glob(os.path.join(root, 'scripts', '*.py')):
+        source = open(path).read()
+        if re.search(r'^\s*(from square|import square)\b', source, re.M):
+            callers.append(os.path.relpath(path, root))
+
+    # Importing square_orders is fine -- the client is lazy, so nothing
+    # connects until something asks it to. Check in a fresh interpreter,
+    # since earlier tests in this run configure a client deliberately.
+    import subprocess
+    probe = subprocess.run(
+        [sys.executable, '-c',
+         'import square_orders; print(square_orders._client is None)'],
+        capture_output=True, text=True, cwd=root,
+        env={k: v for k, v in os.environ.items()
+             if k not in ('SQUARE_ACCESS_TOKEN', 'SQUARE_LOCATION_ID')},
+    )
+    lazy_on_import = probe.stdout.strip() == 'True'
+
+    return all([
+        check(f"only square_orders.py imports the Square SDK ({callers})",
+              callers == ['square_orders.py']),
+        check("importing it does not construct a client", lazy_on_import),
+    ])
+
+
 def main():
     print("Running D1 sync tests...")
     print("=" * 60)
@@ -296,6 +329,7 @@ def main():
         test_square_environment_selection(),
         test_token_description(),
         test_square_calls_are_read_only(),
+        test_only_one_module_talks_to_square(),
     ]
 
     print("\n" + "=" * 60)
