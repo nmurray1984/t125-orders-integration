@@ -76,17 +76,64 @@ say — rotate `SESSION_SECRET` too, which invalidates every session instantly.
 
 ## Local development
 
+Everything runs on your machine -- no Cloudflare account, no deploy, no Square
+credentials. `wrangler dev --local` runs the real Worker runtime against a
+SQLite file under `.wrangler/`.
+
 ```bash
+cd worker
+npm install
+
+# 1. Secrets for local only. This file is git-ignored; these values are fake.
+cat > .dev.vars <<'EOF'
+TROOP_PASSWORD=localdev
+SESSION_SECRET=localdev-session-secret
+SYNC_TOKEN=localdev-sync-token
+EOF
+
+# 2. Create the local tables
 npm run db:init:local
+
+# 3. Start it
 npm run dev
 ```
 
-`wrangler dev` reads secrets from a `.dev.vars` file (git-ignored):
+Then, in a second terminal, load some fake registrations:
 
+```bash
+python seed_local.py
 ```
-TROOP_PASSWORD=localdev
-SESSION_SECRET=localdev-secret
-SYNC_TOKEN=localdev-token
+
+Open http://127.0.0.1:8787 and sign in with `localdev`.
+
+### Using real Square data locally
+
+With `SQUARE_ACCESS_TOKEN` and `SQUARE_LOCATION_ID` set in `.env`:
+
+```bash
+D1_SYNC_URL=http://127.0.0.1:8787/api/sync \
+D1_SYNC_TOKEN=localdev-sync-token \
+python square_orders.py --output d1
+```
+
+`Config.validate_d1_config()` normally requires https, so this is the one case
+where you will need to allow http -- either relax that check temporarily or use
+`seed_local.py` instead.
+
+### If you lock yourself out
+
+Local requests have no `CF-Connecting-IP`, so every one of them shares a single
+`unknown` IP. A few wrong password guesses will throttle you for 15 minutes.
+Clear it with:
+
+```bash
+npx wrangler d1 execute t125-roster --local --command "DELETE FROM login_attempts"
+```
+
+### Resetting
+
+```bash
+rm -rf .wrangler && npm run db:init:local
 ```
 
 ## Tests

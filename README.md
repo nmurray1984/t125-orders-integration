@@ -74,6 +74,28 @@ Leaders visit the Worker URL, enter one shared troop password, pick a campout,
 and get a searchable roster with CSV export and a print-friendly view. It works
 on a phone.
 
+### Running the web app locally
+
+No Cloudflare account or Square credentials needed:
+
+```bash
+cd worker
+npm install
+printf 'TROOP_PASSWORD=localdev\nSESSION_SECRET=localdev-session-secret\nSYNC_TOKEN=localdev-sync-token\n' > .dev.vars
+npm run db:init:local
+npm run dev
+```
+
+Then in a second terminal, load fake registrations and open
+http://127.0.0.1:8787 (password `localdev`):
+
+```bash
+python seed_local.py
+```
+
+See [`worker/README.md`](worker/README.md) for using real Square data locally
+and for resetting the local database.
+
 **Access control is a single shared password.** Sign-in issues an HMAC-signed,
 HttpOnly cookie (30 days by default) and failed attempts are rate limited per
 IP, but everyone uses the same secret — so treat the URL as sensitive, and
