@@ -168,10 +168,16 @@ otherwise a date is parsed out of the campout name when present (ISO, `Nov 14`, 
 future campout is flagged `upcoming` and is what `/` opens on. With no parseable
 dates anywhere it falls back to the campout with the most recent signup activity.
 
-**Buyer email**: taken from a fulfillment recipient
-(`pickup_details`/`shipment_details`/`delivery_details`), falling back to a
-`/v2/customers/{id}` read for orders that carry only a `customer_id`. The
-fallback is deduplicated per customer and never fails a sync.
+**Buyer email**: NOT on the Order. It is typed on the final checkout page for
+the receipt, so Square records it on the **Payment** as `buyer_email_address`.
+`worker/src/sync.js` checks a fulfillment recipient first, then `GET /v2/payments`
+matched on `order_id` (one listing per sync, not per order), then
+`GET /v2/customers/{id}`. All best-effort -- a missing email never fails a sync.
+
+**Read-only enforcement**: `ALLOWED_REQUESTS` in `worker/src/square.js` maps path
+-> method, and the method is enforced. `GET /v2/payments` lists payments; `POST`
+to the same path is CreatePayment. Allowing a path without pinning its verb would
+permit both.
 
 **Schema changes**: `npm run db:init` runs `scripts/migrate.mjs`, which applies
 `schema.sql` and then adds any missing columns listed in `ADDED_COLUMNS`. New

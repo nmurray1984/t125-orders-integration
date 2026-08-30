@@ -45,12 +45,38 @@ test('a customer lookup is allowed; anything else under /v2/customers is not', a
     /only reads from Square/);
 });
 
-test('the allowlist contains only the three reads we need', () => {
-  assert.deepEqual([...READ_ONLY_ENDPOINTS].sort(), [
-    '/v2/catalog/batch-retrieve',
-    '/v2/locations',
-    '/v2/orders/search',
+test('the allowlist contains only the reads we need', () => {
+  assert.deepEqual([...READ_ONLY_ENDPOINTS.entries()].sort(), [
+    ['/v2/catalog/batch-retrieve', 'POST'],
+    ['/v2/locations', 'GET'],
+    ['/v2/orders/search', 'POST'],
+    ['/v2/payments', 'GET'],
   ]);
+});
+
+test('listing payments is a GET; taking one is not reachable', async () => {
+  const seen = [];
+  const originalFetch = globalThis.fetch;
+  globalThis.fetch = async (url, options) => {
+    seen.push({ url: String(url), method: options.method });
+    return Response.json({ payments: [] });
+  };
+
+  try {
+    await callSquare(config, '/v2/payments', undefined, { location_id: 'LOC' });
+  } finally {
+    globalThis.fetch = originalFetch;
+  }
+
+  assert.equal(seen[0].method, 'GET', 'listing payments must not POST');
+  assert.match(seen[0].url, /location_id=LOC/);
+
+  // CreatePayment is a POST to the same path, so the verb is what separates
+  // them: a body turns the request into a POST, which must not be possible.
+  await assert.rejects(
+    () => callSquare(config, '/v2/payments', { amount_money: { amount: 1 } }),
+    /only reads from Square/,
+  );
 });
 
 test('every write endpoint is refused before any request is made', async () => {

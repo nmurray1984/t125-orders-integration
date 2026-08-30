@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Show the shape of a Square orders response without printing anyone's details.
+Show the shape of a Square API response without printing anyone's details.
 
-Pipe a raw /v2/orders/search response into it:
+Pipe in a raw /v2/orders/search or /v2/payments response:
 
     curl ... | python3 scripts/inspect_order.py
 
@@ -69,12 +69,17 @@ def main():
             print(f"  {error.get('code')}: {error.get('detail')}")
         return 1
 
-    orders = payload.get('orders') or []
-    if not orders:
-        print('No orders in the response. Nothing to inspect.')
+    # Works for either endpoint; the roster needs both.
+    kind, records = ('order', payload.get('orders') or [])
+    if not records:
+        kind, records = ('payment', payload.get('payments') or [])
+
+    if not records:
+        print('Nothing to inspect: the response has no orders and no payments.')
         return 1
 
-    print(f'{len(orders)} order(s) returned. Showing the shape of the first:\n')
+    orders = records
+    print(f'{len(records)} {kind}(s) returned. Showing the shape of the first:\n')
 
     emails = []
     for path, shape in walk(orders[0]):
@@ -92,8 +97,12 @@ def main():
         print('No email-shaped value anywhere in this order.')
         keys = sorted(orders[0].keys())
         print(f'Top-level keys present: {", ".join(keys)}')
-        if 'customer_id' in orders[0]:
-            print('This order has a customer_id, so the email may only be '
+        if kind == 'order':
+            print('\nThe buyer types their email on the final checkout page, for '
+                  'the receipt, so it is recorded against the Payment rather than '
+                  'the Order. Check /v2/payments (see the README).')
+        if 'customer_id' in records[0]:
+            print('This record has a customer_id, so the email may also be '
                   'reachable via GET /v2/customers/{id}.')
 
     # Scan the rest too: not every order carries the same fields.

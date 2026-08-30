@@ -9,7 +9,13 @@
 
 import { extractRows, modifierIdsByVersion, modifierListIdsByVersion } from './extract.js';
 import { buildRegistration, normalizeRow, recordSync, upsertRows } from './registrations.js';
-import { fetchCatalogObjects, fetchCustomerEmail, searchOrders, squareConfig } from './square.js';
+import {
+  fetchCatalogObjects,
+  fetchCustomerEmail,
+  fetchPaymentEmails,
+  searchOrders,
+  squareConfig,
+} from './square.js';
 
 export function missingSquareConfig(env) {
   const missing = ['SQUARE_ACCESS_TOKEN', 'SQUARE_LOCATION_ID'].filter((key) => !env[key]);
@@ -17,23 +23,46 @@ export function missingSquareConfig(env) {
 }
 
 /**
- * Some orders carry a customer_id but no fulfillment recipient, so the email
- * needs a Customers lookup. Deduplicated by customer, and best-effort: a
- * lookup that fails leaves the email blank rather than failing the sync.
+ * Fill in emails the order itself does not carry.
+ *
+ * In practice this is nearly all of them: the buyer types their email on the
+ * final checkout page, for the receipt, so it lands on the Payment rather than
+ * the Order. One payments listing covers the whole batch. A customer lookup is
+ * the last resort, for orders with a customer but no payment email.
+ *
+ * All of it is best-effort -- a missing email must never fail a sync.
  */
 async function fillMissingEmails(config, rows) {
+  const missing = () => rows.filter((row) => !row.email);
+  if (!missing().length) return;
+
+  // Ask only as far back as the oldest order we actually fetched.
+  const oldest = rows
+    .map((row) => row.order_created_at)
+    .filter(Boolean)
+    .sort()[0];
+
+  try {
+    const byOrder = await fetchPaymentEmails(config, oldest);
+    for (const row of rows) {
+      if (!row.email) row.email = byOrder.get(row.order_id) || '';
+    }
+  } catch (error) {
+    console.error('could not read payment emails:', error.message);
+  }
+
   const needed = new Set(
-    rows.filter((row) => !row.email && row.customer_id).map((row) => row.customer_id),
+    missing().filter((row) => row.customer_id).map((row) => row.customer_id),
   );
   if (!needed.size) return;
 
-  const emails = new Map();
+  const byCustomer = new Map();
   for (const customerId of needed) {
-    emails.set(customerId, await fetchCustomerEmail(config, customerId));
+    byCustomer.set(customerId, await fetchCustomerEmail(config, customerId));
   }
 
   for (const row of rows) {
-    if (!row.email && row.customer_id) row.email = emails.get(row.customer_id) || '';
+    if (!row.email && row.customer_id) row.email = byCustomer.get(row.customer_id) || '';
   }
 }
 
