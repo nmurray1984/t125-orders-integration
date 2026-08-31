@@ -69,6 +69,9 @@ def build_rows():
                 'cell_phone': f'555-02{counter:02d}' if counter % 3 else '',
                 'travel_to_campout': 'Yes' if counter % 4 else 'No',
                 'total_money': '2500 USD' if adult else '1500 USD',
+                # Every twelfth one abandoned checkout, so the roster's
+                # "started but never paid for" path is exercised locally.
+                'payment_status': 'UNPAID' if counter % 12 == 0 else 'PAID',
                 'order_created_at': ordered_at,
                 # A few blanks, so the UI is exercised with missing emails too.
                 'email': '' if counter % 7 == 0 else

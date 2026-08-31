@@ -25,8 +25,10 @@ from mock_square_data import (
     mock_catalog_modifiers_with_list_response,
     mock_catalog_modifier_lists_response,
     mock_orders_response,
+    mock_canceled_order,
     mock_orders_with_modifier_lists_response,
     mock_refunded_order,
+    mock_unpaid_order,
 )
 
 FIXTURE_DIR = os.path.join(
@@ -49,11 +51,23 @@ def fulfillment_json(fulfillment):
     return out
 
 
+def tender_json(tender):
+    out = {'uid': getattr(tender, 'uid', None) or ''}
+    status = getattr(getattr(tender, 'card_details', None), 'status', None)
+    if status:
+        out['card_details'] = {'status': status}
+    return out
+
+
 def order_json(order):
     return {
         'id': order.id,
         'created_at': order.created_at,
         'customer_id': getattr(order, 'customer_id', None) or '',
+        # What says whether the buyer actually paid; see payment_status().
+        'state': getattr(order, 'state', None),
+        'tenders': [tender_json(t) for t in getattr(order, 'tenders', None) or []],
+        'net_amount_due_money': money_json(getattr(order, 'net_amount_due_money', None)),
         'fulfillments': [fulfillment_json(f) for f in getattr(order, 'fulfillments', None) or []],
         'total_money': money_json(order.total_money),
         'line_items': [
@@ -87,7 +101,7 @@ def catalog_json(obj):
 def main():
     orders = (list(mock_orders_response.orders)
               + list(mock_orders_with_modifier_lists_response.orders)
-              + [mock_refunded_order])
+              + [mock_refunded_order, mock_unpaid_order, mock_canceled_order])
 
     modifiers = (list(mock_catalog_modifiers_response.objects)
                  + list(mock_catalog_modifiers_with_list_response.objects))

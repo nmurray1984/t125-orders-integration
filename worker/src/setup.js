@@ -9,6 +9,7 @@
  */
 
 import { groupSuggestions, suggestCampoutName } from './mapping.js';
+import { VISIBLE_REGISTRATIONS } from './registrations.js';
 
 const MAX_NAME_LENGTH = 200;
 
@@ -42,7 +43,8 @@ export async function readSetup(env) {
        ORDER BY COALESCE(c.starts_at, '9999') ASC, c.name ASC`,
     ).all(),
 
-    // Only registration types the sync has actually produced rows for.
+    // Only registration types the sync has produced paid rows for -- an
+    // abandoned checkout should not conjure a campout to configure.
     env.DB.prepare(
       `SELECT registrations.campout AS line_item_name,
               COUNT(*) AS registrations,
@@ -51,7 +53,7 @@ export async function readSetup(env) {
               rt.campout_id AS campout_id
        FROM registrations
        LEFT JOIN registration_types rt ON rt.line_item_name = registrations.campout
-       WHERE registrations.campout <> ''
+       WHERE registrations.campout <> '' AND ${VISIBLE_REGISTRATIONS}
        GROUP BY registrations.campout, rt.campout_id
        ORDER BY MAX(registrations.order_created_at) DESC, registrations.campout ASC`,
     ).all(),
@@ -149,6 +151,11 @@ export async function assignRegistrationType(env, { line_item_name: lineItemName
   const name = clean(lineItemName);
   if (!name) return { error: 'Which registration type?', status: 400 };
 
+  // Deliberately not filtered by payment status, unlike the listing above:
+  // this only asks whether Square has ever shown us the name. Mapping a type
+  // whose orders are all unpaid groups nothing, and nothing is what the roster
+  // shows for it either -- so being strict here would only lose a race against
+  // a payment landing between the sync and the click.
   const seen = await env.DB.prepare(
     'SELECT 1 AS ok FROM registrations WHERE campout = ?1 LIMIT 1',
   ).bind(name).first();

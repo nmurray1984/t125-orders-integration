@@ -59,6 +59,74 @@ def extract_order_email(order):
     return ''
 
 
+# Deciding whether an order was actually paid for.
+#
+# Square creates the Order when the buyer reaches checkout, not when they pay.
+# Abandon the payment page and the order still exists, still carries every
+# registration answer the buyer typed, and still comes back from SearchOrders,
+# which only excludes DRAFT orders unless a state filter says otherwise. This
+# is the JavaScript worker/src/payments.js logic; the two are pinned together
+# by the parser fixtures.
+#
+# The bias is deliberate: only say UNPAID when the order positively says so. An
+# order carrying no payment information at all is left unknown, and readers
+# treat unknown as visible -- hiding a real registration is a far worse failure
+# than showing an abandoned one.
+PAID = 'PAID'
+UNPAID = 'UNPAID'
+CANCELED = 'CANCELED'
+UNKNOWN = ''
+
+# Statuses a payment can carry without any money having moved.
+DEAD_TENDER_STATES = {'VOIDED', 'FAILED'}
+
+
+def _has_live_tender(order):
+    """True when the order carries a tender that was not voided or failed."""
+    for tender in getattr(order, 'tenders', None) or []:
+        card_details = getattr(tender, 'card_details', None)
+        status = getattr(card_details, 'status', None) if card_details else None
+        if not status or status not in DEAD_TENDER_STATES:
+            return True
+    return False
+
+
+def _money_amount(money):
+    amount = getattr(money, 'amount', None) if money is not None else None
+    return amount if isinstance(amount, int) else None
+
+
+def payment_status(order):
+    """
+    PAID, UNPAID, CANCELED, or '' when the order says nothing either way.
+
+    Checked in order of how directly each signal reports money: a tender is a
+    payment attached to this order, the amount still due is Square's own
+    arithmetic over those tenders, and the state is a summary that lags both --
+    a paid order can sit in OPEN until it is fulfilled.
+    """
+    if order is None:
+        return UNKNOWN
+
+    state = getattr(order, 'state', None)
+    if state == 'CANCELED':
+        return CANCELED
+
+    if _has_live_tender(order):
+        return PAID
+
+    due = _money_amount(getattr(order, 'net_amount_due_money', None))
+    if due is not None:
+        return PAID if due == 0 else UNPAID
+
+    if state == 'COMPLETED':
+        return PAID
+    if state in ('OPEN', 'DRAFT'):
+        return UNPAID
+
+    return UNKNOWN
+
+
 # Square hands out several credential types that all look like opaque strings.
 # Pasting the wrong one is the most common cause of a 401, and the prefix gives
 # it away without us ever printing the secret.
@@ -262,6 +330,9 @@ def extract_order_data(orders, modifier_details):
 
         email = extract_order_email(order)
         customer_id = getattr(order, 'customer_id', None) or ''
+        # Whether the buyer paid is a property of the order, so every line item
+        # on it inherits the same answer.
+        order_payment_status = payment_status(order)
         
         if hasattr(order, 'line_items') and order.line_items:
             for line_item in order.line_items:
@@ -273,6 +344,7 @@ def extract_order_data(orders, modifier_details):
                     'order_id': order_id,
                     'line_item_uid': getattr(line_item, 'uid', '') or '',
                     'order_created_at': order_created_at,
+                    'payment_status': order_payment_status,
                     'email': email,
                     'customer_id': customer_id,
                     'total_money': total_money,

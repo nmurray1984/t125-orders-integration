@@ -7,6 +7,8 @@
  * lost past campouts in the spreadsheet era.
  */
 
+import { HIDDEN_PAYMENT_STATUSES } from './payments.js';
+
 const UPSERT_CHUNK_SIZE = 50;
 
 export const REGISTRATION_FIELDS = [
@@ -24,12 +26,26 @@ export const REGISTRATION_FIELDS = [
   'cell_phone',
   'travel_to_campout',
   'total_money',
+  'payment_status',
   'order_created_at',
   'email',
   'customer_id',
 ];
 
 const DEFAULT_PATROL = 'Rocking Chair';
+
+/**
+ * The rows a reader is allowed to see.
+ *
+ * Unpaid and canceled orders are still stored -- an abandoned checkout that is
+ * paid for later has to be able to flip back, and syncs never delete -- so the
+ * roster, the campout list, the patrol counts and the CSV export all filter
+ * with this instead. An unknown status ('' on anything synced before the
+ * column existed) reads as visible: only an order Square positively reports as
+ * unpaid disappears.
+ */
+export const VISIBLE_REGISTRATIONS =
+  `registrations.payment_status NOT IN (${HIDDEN_PAYMENT_STATUSES.map((s) => `'${s}'`).join(', ')})`;
 
 function text(value) {
   return value === null || value === undefined ? '' : String(value);
@@ -57,6 +73,7 @@ export function buildRegistration(parsed) {
     cell_phone: parsed.cell_phone || '',
     travel_to_campout: parsed.travel_to_campout || '',
     total_money: parsed.total_money || '',
+    payment_status: parsed.payment_status || '',
     order_created_at: parsed.order_created_at || '',
     email: parsed.email || '',
     customer_id: parsed.customer_id || '',
@@ -82,6 +99,27 @@ export function normalizeRow(raw) {
   return row;
 }
 
+/**
+ * How payment_status is merged on conflict, rather than simply overwritten.
+ *
+ * UNPAID means "I found no evidence of payment", which is weaker than a stored
+ * PAID, which means "I saw the payment". Evidence has to beat the absence of
+ * it, because two paths produce a bare UNPAID for an order that really was
+ * paid: the CLI backfill (`--output d1`) never reads the payments listing at
+ * all, and the Worker's own listing is a bounded walk that may not reach an
+ * order it rescued on an earlier run. Letting either demote the row would hide
+ * a real registration -- permanently, once the order ages out of Square's
+ * rolling window and no later sync can put it back.
+ *
+ * CANCELED still overwrites PAID: a cancellation is evidence in its own right,
+ * not a failure to find any.
+ */
+const PAYMENT_STATUS_MERGE = `payment_status = CASE
+         WHEN registrations.payment_status = 'PAID' AND excluded.payment_status = 'UNPAID'
+           THEN 'PAID'
+         ELSE excluded.payment_status
+       END`;
+
 export async function upsertRows(env, rows, syncedAt) {
   const statement = env.DB.prepare(
     `INSERT INTO registrations (
@@ -91,7 +129,7 @@ export async function upsertRows(env, rows, syncedAt) {
      ON CONFLICT(order_id, line_item_uid) DO UPDATE SET
        ${REGISTRATION_FIELDS
          .filter((f) => f !== 'order_id' && f !== 'line_item_uid')
-         .map((f) => `${f} = excluded.${f}`)
+         .map((f) => (f === 'payment_status' ? PAYMENT_STATUS_MERGE : `${f} = excluded.${f}`))
          .join(',\n       ')},
        synced_at = excluded.synced_at`,
   );

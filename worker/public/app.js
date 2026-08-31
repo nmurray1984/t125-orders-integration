@@ -112,8 +112,16 @@ function tag(text, variant) {
 
 /* --- Headcount tiles -------------------------------------------------- */
 
-function renderTotals(patrols, headcount) {
+function renderTotals(patrols, headcount, unpaid = 0) {
   el('hero-total').textContent = String(headcount);
+
+  // Registrations Square never took money for are left off the roster
+  // entirely. Say so, or the first question is why someone is missing.
+  const note = el('unpaid-note');
+  note.hidden = !unpaid;
+  note.textContent = unpaid === 1
+    ? '1 checkout started but never paid for, not shown'
+    : `${unpaid} checkouts started but never paid for, not shown`;
 
   const list = el('patrol-tiles');
   list.replaceChildren();
@@ -317,7 +325,7 @@ async function loadRoster() {
   const data = await response.json();
 
   allRows = data.rows || [];
-  renderTotals(data.patrols || [], data.headcount ?? allRows.length);
+  renderTotals(data.patrols || [], data.headcount ?? allRows.length, data.unpaid ?? 0);
   el('export').href = `/api/export.csv?campout=${encodeURIComponent(currentCampout)}`;
   renderHeader();
   applyView();

@@ -234,6 +234,51 @@ curl -s "https://connect.squareup.com/v2/payments?location_id=$SQUARE_LOCATION_I
 `scripts/inspect_order.py` prints JSON paths with each value's shape rather
 than its content, and flags anything email-shaped.
 
+## Why some registrations do not show up
+
+> Run `npm run db:init` once after deploying this: the roster reads a
+> `payment_status` column that older databases do not have.
+
+**Square creates the order when someone reaches the checkout page, not when
+they pay.** Get as far as entering a card and then close the tab, and Square
+keeps the order -- with the scout's name, rank, patrol and emergency contact
+all filled in, because those were answered before the payment step. It comes
+back from the Orders API looking exactly like a real signup.
+
+So the sync checks each order for a payment before the roster will show it:
+
+1. **Tenders** -- an actual payment attached to the order. This is the plain
+   answer when it is there.
+2. **Amount still due** -- Square's own arithmetic. Nothing owed means paid,
+   which matters because a paid order stays `OPEN` until it is fulfilled and
+   its state alone would be misleading.
+3. **State** -- `COMPLETED` is paid, `CANCELED` is not, `OPEN` and `DRAFT` with
+   nothing else to go on are treated as unpaid.
+4. An order that says none of the above is left **unknown**, and shows. Hiding
+   a real registration is far worse than showing an abandoned one, so anything
+   ambiguous errs toward showing.
+
+Before an order is hidden, the payments listing gets a second look: if Square
+has a completed payment against it, it counts as paid after all.
+
+Unpaid orders are still stored -- they are hidden when the roster is read, not
+thrown away. That means somebody who abandons checkout on Tuesday and pays on
+Thursday simply appears after the next sync, with nothing to re-enter.
+
+The roster shows the count under the total ("2 checkouts started but never paid
+for, not shown"), so a missing name reads as an unfinished checkout rather than
+a broken sync. To see who they are:
+
+```bash
+npx wrangler d1 execute t125-roster --remote \
+  --command "SELECT name, campout, payment_status, order_created_at
+             FROM registrations WHERE payment_status IN ('UNPAID', 'CANCELED')
+             ORDER BY order_created_at DESC LIMIT 20"
+```
+
+Rows synced before this existed have an empty `payment_status` and keep
+showing; only orders Square positively reports as unpaid are hidden.
+
 ## The scheduled sync
 
 `[triggers] crons` in `wrangler.toml` runs the sync hourly except 1am-5am CST,
@@ -266,6 +311,12 @@ npm run deploy
 Code only -- secrets and data are untouched. If you changed `schema.sql`, run
 `npm run db:init` too.
 
+> The deploy workflow does **not** migrate the database. A release that adds a
+> column -- `payment_status` was the last one -- needs `npm run db:init` run
+> against the remote database, or every roster read fails with "no such
+> column" until it is. It is safe to run any time: it only ever adds what is
+> missing.
+
 ## If something is wrong
 
 | Symptom | Cause |
@@ -274,6 +325,7 @@ Code only -- secrets and data are untouched. If you changed `schema.sql`, run
 | 503 from `/api/run-sync`, "Square is not configured" | `SQUARE_ACCESS_TOKEN` or `SQUARE_LOCATION_ID` not set |
 | `sync_log` shows `ok=0` with `HTTP 401` | the Square token is wrong for `SQUARE_ENVIRONMENT` |
 | "database error: no such table: registrations" | step 3 was skipped, or ran locally |
+| "database error: no such column: payment_status" | `npm run db:init` has not been run since this version deployed |
 | Sync returns 401 | `D1_SYNC_TOKEN` does not match the Worker's `SYNC_TOKEN` |
 | Login page but the password is refused | 10 wrong tries per IP per 15 min; wait, or clear `login_attempts` |
 | Empty roster after a sync | check the sync ran against `--square-env production` |

@@ -7,6 +7,8 @@
  * group ids by version and we issue one request per group.
  */
 
+import { LIVE_PAYMENT_STATES } from './payments.js';
+
 const HOSTS = {
   sandbox: 'https://connect.squareupsandbox.com',
   production: 'https://connect.squareup.com',
@@ -38,7 +40,7 @@ const ALLOWED_REQUESTS = new Map([
   ['/v2/orders/search', 'POST'],          // read: recent orders for a location
   ['/v2/catalog/batch-retrieve', 'POST'], // read: modifier + modifier list objects
   ['/v2/locations', 'GET'],               // read: locations this token can see
-  ['/v2/payments', 'GET'],                // read: buyer email, captured at checkout
+  ['/v2/payments', 'GET'],                // read: buyer email + whether the order was paid
 ]);
 
 // Customer lookups are per-id, so the path varies; matched by shape instead.
@@ -157,14 +159,17 @@ export async function listLocations(config) {
 
 /**
  * Payments for the location since `beginTime`, keyed by the order they paid
- * for.
+ * for. Each entry carries the buyer's email and whether money actually moved.
  *
- * The buyer's email is entered on the final checkout page, for the receipt --
- * so it lands on the Payment, not the Order. One listing covers every order in
- * the batch, rather than a lookup per order.
+ * Both facts live here rather than on the Order. The email is entered on the
+ * final checkout page, for the receipt, so Square records it against the
+ * Payment. And a payment record is the second opinion on whether an order was
+ * paid for: the order's own tenders answer that first, and this only ever
+ * upgrades an order to paid, never the other way -- one listing covers the
+ * whole batch, but it is a bounded walk and a missing entry proves nothing.
  */
-export async function fetchPaymentEmails(config, beginTime) {
-  const emailsByOrder = new Map();
+export async function fetchPayments(config, beginTime) {
+  const byOrder = new Map();
   let cursor;
   let pages = 0;
 
@@ -176,20 +181,23 @@ export async function fetchPaymentEmails(config, beginTime) {
     const payload = await request(config, '/v2/payments', undefined, query);
 
     for (const payment of payload.payments || []) {
-      if (payment.order_id && payment.buyer_email_address) {
-        // Payments come back newest first; keep the first email seen for an
-        // order so a later partial payment cannot overwrite it.
-        if (!emailsByOrder.has(payment.order_id)) {
-          emailsByOrder.set(payment.order_id, payment.buyer_email_address);
-        }
+      if (!payment.order_id) continue;
+
+      // Payments come back newest first; keep the first email seen for an
+      // order so a later partial payment cannot overwrite it.
+      const entry = byOrder.get(payment.order_id) || { email: '', paid: false };
+      if (!entry.email && payment.buyer_email_address) {
+        entry.email = payment.buyer_email_address;
       }
+      if (LIVE_PAYMENT_STATES.has(payment.status)) entry.paid = true;
+      byOrder.set(payment.order_id, entry);
     }
 
     cursor = payload.cursor;
     pages += 1;
   } while (cursor && pages < 10);   // bound the walk; the sync is time-boxed
 
-  return emailsByOrder;
+  return byOrder;
 }
 
 /**

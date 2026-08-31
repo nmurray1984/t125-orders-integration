@@ -109,6 +109,19 @@
           "variation_name": "Basic Registration"
         }
       ],
+      "net_amount_due_money": {
+        "amount": 0,
+        "currency": "USD"
+      },
+      "state": "COMPLETED",
+      "tenders": [
+        {
+          "card_details": {
+            "status": "CAPTURED"
+          },
+          "uid": "TENDER_1"
+        }
+      ],
       "total_money": {
         "amount": 15000,
         "currency": "USD"
@@ -153,6 +166,12 @@
           "variation_name": "Premium Registration"
         }
       ],
+      "net_amount_due_money": {
+        "amount": 0,
+        "currency": "USD"
+      },
+      "state": "OPEN",
+      "tenders": [],
       "total_money": {
         "amount": 25000,
         "currency": "USD"
@@ -184,6 +203,9 @@
           "variation_name": "Basic Registration"
         }
       ],
+      "net_amount_due_money": null,
+      "state": null,
+      "tenders": [],
       "total_money": {
         "amount": 10000,
         "currency": "USD"
@@ -210,6 +232,9 @@
           "variation_name": "Standard Registration"
         }
       ],
+      "net_amount_due_money": null,
+      "state": "COMPLETED",
+      "tenders": [],
       "total_money": {
         "amount": 20000,
         "currency": "USD"
@@ -236,7 +261,78 @@
           "variation_name": "Basic Registration"
         }
       ],
+      "net_amount_due_money": null,
+      "state": "COMPLETED",
+      "tenders": [
+        {
+          "card_details": {
+            "status": "CAPTURED"
+          },
+          "uid": "TENDER_R"
+        }
+      ],
       "total_money": null
+    },
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "customer_id": "",
+      "fulfillments": [],
+      "id": "ORDER_UNPAID",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 1,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_1",
+              "name": "Scout Name: Unpaid Scout",
+              "uid": "MODIFIER_U_1_1"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_U_1",
+          "variation_name": "Basic Registration"
+        }
+      ],
+      "net_amount_due_money": {
+        "amount": 15000,
+        "currency": "USD"
+      },
+      "state": "OPEN",
+      "tenders": [],
+      "total_money": {
+        "amount": 15000,
+        "currency": "USD"
+      }
+    },
+    {
+      "created_at": "2026-08-01T12:00:00Z",
+      "customer_id": "",
+      "fulfillments": [],
+      "id": "ORDER_CANCELED",
+      "line_items": [
+        {
+          "catalog_object_id": "CATALOG_ITEM_1",
+          "catalog_version": 1,
+          "modifiers": [
+            {
+              "catalog_object_id": "MODIFIER_1",
+              "name": "Scout Name: Canceled Scout",
+              "uid": "MODIFIER_C_1_1"
+            }
+          ],
+          "name": "Camp Registration",
+          "uid": "LINE_ITEM_C_1",
+          "variation_name": "Basic Registration"
+        }
+      ],
+      "net_amount_due_money": null,
+      "state": "CANCELED",
+      "tenders": [],
+      "total_money": {
+        "amount": 15000,
+        "currency": "USD"
+      }
     }
   ]
 }
