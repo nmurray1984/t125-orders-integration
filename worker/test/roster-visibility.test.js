@@ -306,3 +306,21 @@ test('an abandoned checkout does not conjure a registration type to configure', 
   assert.deepEqual(names, ['Scout Registration - NASA Campout']);
   assert.equal(body.registration_types[0].registrations, 2, 'the hidden rows are not counted');
 });
+
+test('a database failure answers with the reason, not an opaque 500', async () => {
+  // `return somePromise` inside a try settles after the block is left, so the
+  // rejection used to walk past the catch and out of the Worker entirely --
+  // Cloudflare answered with its own 500 and the reason was visible only in
+  // `wrangler tail`. A missing column is exactly how that shows up.
+  const env = seeded();
+  const cookie = await signIn(env);
+
+  env.database.prepare('ALTER TABLE registrations DROP COLUMN payment_status').run();
+
+  for (const path of ['/api/campouts', '/api/roster', '/api/export.csv', '/api/setup']) {
+    const response = await get(env, cookie, path);
+    assert.equal(response.status, 500, `${path} answers rather than throwing`);
+    const body = await response.json();
+    assert.match(body.error, /no such column: .*payment_status/, `${path} says why`);
+  }
+});

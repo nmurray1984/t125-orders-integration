@@ -383,12 +383,20 @@ export default {
       return json({ error: 'unauthorized' }, { status: 401 });
     }
 
+    // Every one of these is awaited, not just returned. `return somePromise`
+    // inside a try settles after the block has been left, so a rejection walks
+    // straight past this catch and out of the Worker -- Cloudflare then answers
+    // with its own opaque 500 and the reason survives only in `wrangler tail`.
+    // Awaiting keeps the failure here, where it can say what actually broke.
     try {
-      if (url.pathname === '/api/campouts') return handleCampouts(env);
-      if (url.pathname === '/api/roster') return handleRoster(url, env);
-      if (url.pathname === '/api/export.csv') return handleExport(url, env);
-      if (url.pathname.startsWith('/api/setup')) return handleSetup(url, request, env);
+      if (url.pathname === '/api/campouts') return await handleCampouts(env);
+      if (url.pathname === '/api/roster') return await handleRoster(url, env);
+      if (url.pathname === '/api/export.csv') return await handleExport(url, env);
+      if (url.pathname.startsWith('/api/setup')) return await handleSetup(url, request, env);
     } catch (error) {
+      // Logged as well as returned: the response is seen by whoever is looking
+      // at the page, the log by whoever is tailing the Worker.
+      console.error(`${request.method} ${url.pathname} failed:`, error.message);
       return json({ error: `database error: ${error.message}` }, { status: 500 });
     }
 

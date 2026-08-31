@@ -326,15 +326,34 @@ Code only -- secrets and data are untouched. If you changed `schema.sql`, run
 | `sync_log` shows `ok=0` with `HTTP 401` | the Square token is wrong for `SQUARE_ENVIRONMENT` |
 | "database error: no such table: registrations" | step 3 was skipped, or ran locally |
 | "database error: no such column: payment_status" | `npm run db:init` has not been run since this version deployed |
+| A 500 with no JSON body at all | the Worker threw outside the handler -- `npx wrangler tail` has the reason |
 | Sync returns 401 | `D1_SYNC_TOKEN` does not match the Worker's `SYNC_TOKEN` |
 | Login page but the password is refused | 10 wrong tries per IP per 15 min; wait, or clear `login_attempts` |
 | Empty roster after a sync | check the sync ran against `--square-env production` |
+
+Watch the live Worker while you reproduce the request:
+
+```bash
+npx wrangler tail --format pretty
+```
+
+Every failed API request logs `<METHOD> <path> failed: <reason>` there and
+returns the same reason in the response body, so the browser's network tab is
+usually enough on its own.
 
 Read the remote database directly when in doubt:
 
 ```bash
 npx wrangler d1 execute t125-roster --remote \
   --command "SELECT campout, COUNT(*) FROM registrations GROUP BY campout"
+```
+
+To check which columns the remote table actually has -- the first thing to look
+at when a read fails right after a deploy:
+
+```bash
+npx wrangler d1 execute t125-roster --remote \
+  --command "SELECT name FROM pragma_table_info('registrations')"
 ```
 
 ## Custom domain (optional)
