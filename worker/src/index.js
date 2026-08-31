@@ -13,7 +13,12 @@ import {
 import { annotateCampouts } from './campouts.js';
 import { CAMPOUT_JOIN, CAMPOUT_NAME, groupSuggestions } from './mapping.js';
 import { ROSTER_COLUMNS, toCsv } from './csv.js';
-import { normalizeRow, recordSync, upsertRows } from './registrations.js';
+import {
+  VISIBLE_REGISTRATIONS,
+  normalizeRow,
+  recordSync,
+  upsertRows,
+} from './registrations.js';
 import { runSync } from './sync.js';
 import {
   applyGrouping,
@@ -130,7 +135,7 @@ async function handleCampouts(env) {
             MAX(order_created_at) AS last_order_at
      FROM registrations
      ${CAMPOUT_JOIN}
-     WHERE registrations.campout <> ''
+     WHERE registrations.campout <> '' AND ${VISIBLE_REGISTRATIONS}
      GROUP BY ${CAMPOUT_NAME}`,
   ).all();
 
@@ -145,6 +150,7 @@ async function patrolCounts(env, campout) {
   if (!campout || campout === ALL_CAMPOUTS) {
     const { results } = await env.DB.prepare(
       `SELECT patrol, COUNT(*) AS headcount FROM registrations
+       WHERE ${VISIBLE_REGISTRATIONS}
        GROUP BY patrol ORDER BY headcount DESC, patrol ASC`,
     ).all();
     return results ?? [];
@@ -154,7 +160,7 @@ async function patrolCounts(env, campout) {
     `SELECT registrations.patrol AS patrol, COUNT(*) AS headcount
      FROM registrations
      ${CAMPOUT_JOIN}
-     WHERE ${CAMPOUT_NAME} = ?1
+     WHERE ${CAMPOUT_NAME} = ?1 AND ${VISIBLE_REGISTRATIONS}
      GROUP BY registrations.patrol
      ORDER BY headcount DESC, patrol ASC`,
   ).bind(campout).all();
@@ -168,13 +174,14 @@ async function rosterRows(env, campout) {
           `SELECT registrations.*, ${CAMPOUT_NAME} AS campout_name
            FROM registrations
            ${CAMPOUT_JOIN}
-           WHERE ${CAMPOUT_NAME} = ?1
+           WHERE ${CAMPOUT_NAME} = ?1 AND ${VISIBLE_REGISTRATIONS}
            ORDER BY registrations.patrol ASC, registrations.name ASC`,
         ).bind(campout)
       : env.DB.prepare(
           `SELECT registrations.*, ${CAMPOUT_NAME} AS campout_name
            FROM registrations
            ${CAMPOUT_JOIN}
+           WHERE ${VISIBLE_REGISTRATIONS}
            ORDER BY registrations.order_created_at DESC,
                     registrations.patrol ASC, registrations.name ASC`,
         );
@@ -182,11 +189,37 @@ async function rosterRows(env, campout) {
   return results ?? [];
 }
 
+/**
+ * How many registrations are being withheld for want of a payment.
+ *
+ * Hiding them silently is what turns an abandoned checkout into "the roster is
+ * broken" -- somebody swears they signed up and is not on the list. The count
+ * says the sync saw them and Square never took the money.
+ */
+async function unpaidCount(env, campout) {
+  const query =
+    campout && campout !== ALL_CAMPOUTS
+      ? env.DB.prepare(
+          `SELECT COUNT(*) AS unpaid
+           FROM registrations
+           ${CAMPOUT_JOIN}
+           WHERE ${CAMPOUT_NAME} = ?1 AND NOT (${VISIBLE_REGISTRATIONS})`,
+        ).bind(campout)
+      : env.DB.prepare(
+          `SELECT COUNT(*) AS unpaid FROM registrations
+           WHERE NOT (${VISIBLE_REGISTRATIONS})`,
+        );
+
+  const row = await query.first();
+  return row?.unpaid ?? 0;
+}
+
 async function handleRoster(url, env) {
   const campout = url.searchParams.get('campout');
-  const [rows, patrols] = await Promise.all([
+  const [rows, patrols, unpaid] = await Promise.all([
     rosterRows(env, campout),
     patrolCounts(env, campout),
+    unpaidCount(env, campout),
   ]);
 
   return json({
@@ -194,6 +227,7 @@ async function handleRoster(url, env) {
     rows,
     patrols,
     headcount: rows.length,
+    unpaid,
     last_synced_at: await lastSyncedAt(env),
   });
 }

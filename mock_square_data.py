@@ -39,15 +39,36 @@ class MockFulfillment:
         self.shipment_details = shipment_details
         self.delivery_details = delivery_details
 
+class MockCardDetails:
+    def __init__(self, status=None):
+        self.status = status
+
+class MockTender:
+    """A payment attached to an order. No tenders means nobody has paid."""
+    def __init__(self, uid=None, card_details=None):
+        self.uid = uid
+        self.card_details = card_details
+
 class MockOrder:
+    """
+    A Square order.
+
+    `state`, `tenders` and `net_amount_due_money` are what say whether the
+    buyer actually paid. Square creates the order at checkout, so an abandoned
+    one looks exactly like a real registration apart from these.
+    """
     def __init__(self, id, total_money, line_items=None, created_at=None,
-                 fulfillments=None, customer_id=None):
+                 fulfillments=None, customer_id=None, state=None, tenders=None,
+                 net_amount_due_money=None):
         self.id = id
         self.total_money = total_money
         self.line_items = line_items or []
         self.created_at = created_at or "2026-08-01T12:00:00Z"
         self.fulfillments = fulfillments or []
         self.customer_id = customer_id
+        self.state = state
+        self.tenders = tenders or []
+        self.net_amount_due_money = net_amount_due_money
 
 class MockModifierData:
     def __init__(self, name, modifier_list_id=None):
@@ -82,6 +103,10 @@ mock_orders_response = MockAPIResponse(
                     MockRecipient(email_address="john.smith@example.com")))],
             id="ORDER_1",
             total_money=MockMoney(15000, "USD"),
+            # Paid and closed: the ordinary shape of a real registration.
+            state="COMPLETED",
+            tenders=[MockTender("TENDER_1", MockCardDetails("CAPTURED"))],
+            net_amount_due_money=MockMoney(0, "USD"),
             line_items=[
                 MockLineItem(
                     uid="LINE_ITEM_1_1",
@@ -110,6 +135,10 @@ mock_orders_response = MockAPIResponse(
                     MockRecipient(email_address="jane.doe@example.com")))],
             id="ORDER_2",
             total_money=MockMoney(25000, "USD"),
+            # Paid, but still OPEN until it is fulfilled -- nothing is owed, so
+            # the state alone would have been the wrong thing to read.
+            state="OPEN",
+            net_amount_due_money=MockMoney(0, "USD"),
             line_items=[
                 MockLineItem(
                     uid="LINE_ITEM_2_1",
@@ -248,6 +277,8 @@ mock_orders_with_modifier_lists_response = MockAPIResponse(
     orders=[
         MockOrder(
             id="ORDER_4",
+            # COMPLETED with no tender detail on the order at all.
+            state="COMPLETED",
             total_money=MockMoney(20000, "USD"),
             line_items=[
                 MockLineItem(
@@ -288,6 +319,8 @@ mock_catalog_modifiers_with_list_response = MockAPIResponse(
 mock_refunded_order = MockOrder(
     id="ORDER_REFUNDED",
     total_money=None,
+    state="COMPLETED",
+    tenders=[MockTender("TENDER_R", MockCardDetails("CAPTURED"))],
     line_items=[
         MockLineItem(
             uid="LINE_ITEM_R_1",
@@ -299,6 +332,58 @@ mock_refunded_order = MockOrder(
                 MockModifier(
                     uid="MODIFIER_R_1_1",
                     name="Scout Name: Refunded Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        )
+    ]
+)
+
+# Mock order that reached checkout but was never paid for.
+#
+# Square creates the order as soon as the buyer gets to the payment page, so it
+# carries every registration answer they typed and comes back from SearchOrders
+# looking like any other. What gives it away is that the full amount is still
+# due and no tender was ever attached.
+mock_unpaid_order = MockOrder(
+    id="ORDER_UNPAID",
+    total_money=MockMoney(15000, "USD"),
+    state="OPEN",
+    net_amount_due_money=MockMoney(15000, "USD"),
+    line_items=[
+        MockLineItem(
+            uid="LINE_ITEM_U_1",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_U_1_1",
+                    name="Scout Name: Unpaid Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        )
+    ]
+)
+
+# Mock order the buyer canceled outright.
+mock_canceled_order = MockOrder(
+    id="ORDER_CANCELED",
+    total_money=MockMoney(15000, "USD"),
+    state="CANCELED",
+    line_items=[
+        MockLineItem(
+            uid="LINE_ITEM_C_1",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_C_1_1",
+                    name="Scout Name: Canceled Scout",
                     catalog_object_id="MODIFIER_1"
                 )
             ]

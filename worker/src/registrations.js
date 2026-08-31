@@ -7,6 +7,8 @@
  * lost past campouts in the spreadsheet era.
  */
 
+import { HIDDEN_PAYMENT_STATUSES } from './payments.js';
+
 const UPSERT_CHUNK_SIZE = 50;
 
 export const REGISTRATION_FIELDS = [
@@ -24,12 +26,26 @@ export const REGISTRATION_FIELDS = [
   'cell_phone',
   'travel_to_campout',
   'total_money',
+  'payment_status',
   'order_created_at',
   'email',
   'customer_id',
 ];
 
 const DEFAULT_PATROL = 'Rocking Chair';
+
+/**
+ * The rows a reader is allowed to see.
+ *
+ * Unpaid and canceled orders are still stored -- an abandoned checkout that is
+ * paid for later has to be able to flip back, and syncs never delete -- so the
+ * roster, the campout list, the patrol counts and the CSV export all filter
+ * with this instead. An unknown status ('' on anything synced before the
+ * column existed) reads as visible: only an order Square positively reports as
+ * unpaid disappears.
+ */
+export const VISIBLE_REGISTRATIONS =
+  `registrations.payment_status NOT IN (${HIDDEN_PAYMENT_STATUSES.map((s) => `'${s}'`).join(', ')})`;
 
 function text(value) {
   return value === null || value === undefined ? '' : String(value);
@@ -57,6 +73,7 @@ export function buildRegistration(parsed) {
     cell_phone: parsed.cell_phone || '',
     travel_to_campout: parsed.travel_to_campout || '',
     total_money: parsed.total_money || '',
+    payment_status: parsed.payment_status || '',
     order_created_at: parsed.order_created_at || '',
     email: parsed.email || '',
     customer_id: parsed.customer_id || '',

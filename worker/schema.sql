@@ -21,6 +21,9 @@ CREATE TABLE IF NOT EXISTS registrations (
   email                   TEXT NOT NULL DEFAULT '',
   customer_id             TEXT NOT NULL DEFAULT '',
   total_money             TEXT NOT NULL DEFAULT '',
+  -- PAID / UNPAID / CANCELED, or '' for rows synced before this existed.
+  -- Readers hide UNPAID and CANCELED; see worker/src/payments.js.
+  payment_status          TEXT NOT NULL DEFAULT '',
   order_created_at        TEXT NOT NULL DEFAULT '',
   first_seen_at           TEXT NOT NULL DEFAULT '',
   synced_at               TEXT NOT NULL DEFAULT '',

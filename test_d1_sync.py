@@ -10,7 +10,11 @@ from unittest import mock
 
 sys.path.append(os.path.dirname(os.path.abspath(__file__)))
 
-from mock_square_data import get_mock_orders_response
+from mock_square_data import (
+    get_mock_orders_response,
+    mock_canceled_order,
+    mock_unpaid_order,
+)
 from square_orders import extract_order_data
 import d1_sync
 
@@ -314,12 +318,37 @@ def test_only_one_module_talks_to_square():
     ])
 
 
+def test_payment_status_is_carried_to_the_worker():
+    """
+    An unpaid order still gets synced -- the Worker hides it at read time, so a
+    checkout paid for later can flip back without the row having to be rebuilt.
+    """
+    print("\nTesting payment status in the sync payload...")
+
+    orders = list(get_mock_orders_response().orders) + [mock_unpaid_order, mock_canceled_order]
+    rows = d1_sync.build_rows(extract_order_data(orders, {}))
+    by_order = {r['order_id']: r['payment_status'] for r in rows}
+
+    return all([
+        check("every row carries a payment_status",
+              all('payment_status' in r for r in rows)),
+        check("the abandoned checkout is synced as UNPAID",
+              by_order['ORDER_UNPAID'] == 'UNPAID'),
+        check("the canceled order is synced as CANCELED",
+              by_order['ORDER_CANCELED'] == 'CANCELED'),
+        check("a paid order is synced as PAID", by_order['ORDER_1'] == 'PAID'),
+        check("a row with no status defaults to '' rather than being dropped",
+              d1_sync.build_row({'order_id': 'O', 'line_item_uid': 'L'})['payment_status'] == ''),
+    ])
+
+
 def main():
     print("Running D1 sync tests...")
     print("=" * 60)
 
     results = [
         test_build_rows_maps_fields(),
+        test_payment_status_is_carried_to_the_worker(),
         test_name_and_patrol_defaults(),
         test_rows_without_keys_are_dropped(),
         test_batching(),

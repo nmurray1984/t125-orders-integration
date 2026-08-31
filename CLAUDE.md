@@ -54,7 +54,8 @@ curl -X POST https://<worker>/api/run-sync -H "Authorization: Bearer <SYNC_TOKEN
 ```bash
 python test_square_orders.py   # modifier parsing, mock Square data
 python test_d1_sync.py         # D1 payload mapping, batching, Square env selection
-cd worker && npm test          # parser port, cron sync, auth, campout dates, CSV
+cd worker && npm test          # parser port, cron sync, auth, campout dates, CSV,
+                               # and roster visibility against real SQLite
 ```
 All tests use mocks/stubs -- no actual API calls. CI runs all three before any
 deploy, and also regenerates the parser fixtures and fails if they drift.
@@ -174,6 +175,29 @@ the receipt, so Square records it on the **Payment** as `buyer_email_address`.
 matched on `order_id` (one listing per sync, not per order), then
 `GET /v2/customers/{id}`. All best-effort -- a missing email never fails a sync.
 
+**Payment verification** (`worker/src/payments.js`, ported to `payment_status()`
+in `square_orders.py`): Square creates the Order when the buyer reaches
+checkout, not when they pay, and SearchOrders returns those orders. An
+abandoned checkout therefore arrives carrying every registration answer the
+buyer typed, indistinguishable from a real signup once the modifiers are
+parsed. `orderPaymentStatus()` reads the order's `tenders`, then
+`net_amount_due_money`, then `state` -- in that order, because a paid order can
+sit in `OPEN` until it is fulfilled -- and yields PAID / UNPAID / CANCELED, or
+`''` when the order says nothing either way.
+
+Unpaid rows are still **synced**, and hidden at **read** time by
+`VISIBLE_REGISTRATIONS` (registrations.js), which every roster, campout, patrol,
+CSV and setup query applies. Two reasons it works that way: a checkout paid for
+later just flips status on the next sync, and rows written before the column
+existed carry `''`, which reads as visible -- so nothing already on the roster
+disappears when this ships. `/api/roster` returns an `unpaid` count so the UI
+can say people were withheld rather than leaving them silently missing.
+
+Before a row is hidden, `sync.js` gives it a second chance: the payments listing
+already fetched for emails can promote UNPAID to PAID, never the reverse. The
+listing is a bounded walk, so a missing entry proves nothing -- but a present
+one proves payment.
+
 **Read-only enforcement**: `ALLOWED_REQUESTS` in `worker/src/square.js` maps path
 -> method, and the method is enforced. `GET /v2/payments` lists payments; `POST`
 to the same path is CreatePayment. Allowing a path without pinning its verb would
@@ -187,7 +211,8 @@ schema.sql breaks re-runs, since SQLite has no IF NOT EXISTS for columns.
 
 **Upsert semantics**: `first_seen_at` is preserved on conflict; every other column
 plus `synced_at` is overwritten. Syncs never delete, so the rolling Square fetch
-window cannot drop history.
+window cannot drop history -- including unpaid rows, which are filtered on read
+rather than dropped.
 
 **Auth** (`worker/src/auth.js`):
 - Web UI: one shared `TROOP_PASSWORD`, compared by HMAC (timing-safe, length-blind).

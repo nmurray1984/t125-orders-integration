@@ -24,6 +24,9 @@ const target = process.argv.includes('--remote') ? '--remote' : '--local';
 const ADDED_COLUMNS = [
   { table: 'registrations', column: 'email', definition: "TEXT NOT NULL DEFAULT ''" },
   { table: 'registrations', column: 'customer_id', definition: "TEXT NOT NULL DEFAULT ''" },
+  // Existing rows default to '' -- unknown, and therefore still visible. Only
+  // orders a later sync positively reports as unpaid disappear from the roster.
+  { table: 'registrations', column: 'payment_status', definition: "TEXT NOT NULL DEFAULT ''" },
 ];
 
 function wrangler(args, { json = false } = {}) {

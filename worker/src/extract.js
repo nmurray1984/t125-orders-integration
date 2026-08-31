@@ -13,6 +13,8 @@
  * deliberately (scripts/make_worker_fixture.py), never quietly adjusted.
  */
 
+import { orderPaymentStatus } from './payments.js';
+
 const FIELD_BY_QUESTION = {
   'Scout Name': 'scout_name',
   'Scouter Name': 'scouter_name',
@@ -46,11 +48,12 @@ export function extractOrderEmail(order) {
   return '';
 }
 
-function emptyRow(order, lineItem, totalMoney) {
+function emptyRow(order, lineItem, totalMoney, paymentStatus) {
   return {
     order_id: order.id,
     line_item_uid: lineItem.uid || '',
     order_created_at: order.created_at || '',
+    payment_status: paymentStatus,
     email: extractOrderEmail(order),
     customer_id: order.customer_id || '',
     total_money: totalMoney,
@@ -120,9 +123,12 @@ export function extractRows(orders, catalogById) {
 
   for (const order of orders) {
     const totalMoney = formatMoney(order.total_money);
+    // Whether the buyer paid is a property of the order, so every line item on
+    // it inherits the same answer.
+    const paymentStatus = orderPaymentStatus(order);
 
     for (const lineItem of order.line_items || []) {
-      const row = emptyRow(order, lineItem, totalMoney);
+      const row = emptyRow(order, lineItem, totalMoney, paymentStatus);
 
       for (const modifier of lineItem.modifiers || []) {
         const catalogObject = catalogById[modifier.catalog_object_id];

@@ -7,6 +7,9 @@ import { dirname, join } from 'node:path';
 import { runSync } from '../src/sync.js';
 import { REGISTRATION_FIELDS } from '../src/registrations.js';
 
+/** The fixture's seven line items: five payable-looking, two that never paid. */
+const FIXTURE_ROWS = 7;
+
 /** Bound values are positional; look them up by field name, not by counting. */
 const field = (values, name) => values[REGISTRATION_FIELDS.indexOf(name)];
 
@@ -99,8 +102,8 @@ test('a scheduled sync fetches, parses and upserts', async () => {
 
   assert.equal(result.ok, true);
   assert.equal(result.orders, fixture.orders.length);
-  assert.equal(result.upserted, 5, 'five line items across the fixture orders');
-  assert.equal(env.DB.upserts.length, 5);
+  assert.equal(result.upserted, FIXTURE_ROWS, 'one row per line item across the fixture');
+  assert.equal(env.DB.upserts.length, FIXTURE_ROWS);
   assert.equal(env.DB.syncLog.length, 1, 'exactly one sync_log entry');
 
   const [orderSearch] = calls;
@@ -213,17 +216,93 @@ test('a payments failure leaves emails blank rather than failing the sync', asyn
 
   const result = await runSync(env);
   assert.equal(result.ok, true, 'the sync still completes');
-  assert.equal(result.upserted, 5);
+  assert.equal(result.upserted, FIXTURE_ROWS);
 });
 
-test('payments are not requested when every order already has an email', async () => {
+test('payments are not requested when nothing needs them', async () => {
   const env = baseEnv();
-  const withEmail = fixture.orders.map((order) => ({
+  // Every order has an email and is visibly paid, so there is nothing left to
+  // ask Square about.
+  const settled = fixture.orders.map((order) => ({
     ...order,
+    state: 'COMPLETED',
+    tenders: [{ uid: 'TENDER', card_details: { status: 'CAPTURED' } }],
     fulfillments: [{ pickup_details: { recipient: { email_address: 'a@b.test' } } }],
   }));
-  const calls = stubSquare({ orders: withEmail });
+  const calls = stubSquare({ orders: settled });
+
+  const result = await runSync(env);
+  assert.equal(result.unpaid, 0);
+  assert.equal(calls.filter((c) => c.url.includes('/v2/payments')).length, 0);
+});
+
+test('an order that reached checkout without paying is stored but hidden', async () => {
+  // Square creates the order at the payment page, so an abandoned checkout
+  // comes back from SearchOrders carrying every registration answer typed.
+  const env = baseEnv();
+  stubSquare();
+
+  const result = await runSync(env);
+
+  const byOrder = Object.fromEntries(
+    env.DB.upserts.map((values) => [field(values, 'order_id'), field(values, 'payment_status')]),
+  );
+  assert.equal(byOrder.ORDER_UNPAID, 'UNPAID', 'no tender and the full amount still due');
+  assert.equal(byOrder.ORDER_CANCELED, 'CANCELED');
+  assert.equal(byOrder.ORDER_1, 'PAID', 'completed, with a captured tender');
+  assert.equal(byOrder.ORDER_2, 'PAID', 'still OPEN for fulfillment, but nothing is owed');
+  assert.equal(byOrder.ORDER_3, '', 'an order that says nothing stays visible');
+
+  assert.equal(result.unpaid, 2, 'reported, so a registrar can chase them');
+  assert.equal(result.upserted, FIXTURE_ROWS, 'unpaid rows are still written');
+  assert.match(env.DB.syncLog[0].join(' '), /2 unpaid row\(s\) hidden/);
+});
+
+test('a payment record rescues an order whose own tenders look unpaid', async () => {
+  // The order is the first signal, but the payments listing gets the last
+  // word in the safe direction: it can only ever promote a row to PAID.
+  const env = baseEnv();
+  stubSquare({
+    payments: [{ order_id: 'ORDER_UNPAID', status: 'COMPLETED', buyer_email_address: 'p@b.test' }],
+  });
+
+  const result = await runSync(env);
+
+  const byOrder = Object.fromEntries(
+    env.DB.upserts.map((values) => [field(values, 'order_id'), field(values, 'payment_status')]),
+  );
+  assert.equal(byOrder.ORDER_UNPAID, 'PAID');
+  assert.equal(result.unpaid, 1, 'only the canceled order stays hidden');
+});
+
+test('a failed payment does not rescue an unpaid order', async () => {
+  const env = baseEnv();
+  stubSquare({
+    payments: [{ order_id: 'ORDER_UNPAID', status: 'FAILED', buyer_email_address: 'p@b.test' }],
+  });
 
   await runSync(env);
-  assert.equal(calls.filter((c) => c.url.includes('/v2/payments')).length, 0);
+
+  const byOrder = Object.fromEntries(
+    env.DB.upserts.map((values) => [field(values, 'order_id'), field(values, 'payment_status')]),
+  );
+  assert.equal(byOrder.ORDER_UNPAID, 'UNPAID');
+});
+
+test('a payments failure leaves the order\'s own verdict standing', async () => {
+  const env = baseEnv();
+  const catalogById = Object.fromEntries(fixture.catalog_objects.map((o) => [o.id, o]));
+
+  globalThis.fetch = async (url, options) => {
+    if (String(url).includes('/v2/payments')) {
+      return new Response(JSON.stringify({ errors: [{ detail: 'nope' }] }), { status: 403 });
+    }
+    if (String(url).endsWith('/v2/orders/search')) return Response.json({ orders: fixture.orders });
+    const ids = JSON.parse(options.body).object_ids;
+    return Response.json({ objects: ids.map((id) => catalogById[id]).filter(Boolean) });
+  };
+
+  const result = await runSync(env);
+  assert.equal(result.ok, true, 'the sync still completes');
+  assert.equal(result.unpaid, 2, 'no second opinion, so the order decides alone');
 });
