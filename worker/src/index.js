@@ -125,17 +125,31 @@ async function lastSyncedAt(env) {
   return row?.synced_at ?? null;
 }
 
+/**
+ * The campout list, counting only registrations that were paid for.
+ *
+ * The count is filtered but the rows are not, deliberately. Dropping unpaid
+ * rows from the WHERE clause here would make a campout whose signups were all
+ * abandoned vanish from the picker entirely -- and that is precisely the case
+ * somebody is trying to look into when they ask where everyone went. It stays
+ * listed, showing nobody, with the roster explaining why.
+ *
+ * The date columns stay over every row for the same reason they always did:
+ * they answer "when did Square see activity for this campout", which is what
+ * campouts.js falls back on to order undated campouts.
+ */
 async function handleCampouts(env) {
   const { results } = await env.DB.prepare(
     `SELECT ${CAMPOUT_NAME} AS campout,
             MAX(c.starts_at) AS configured_starts_at,
-            COUNT(*) AS registrations,
+            SUM(CASE WHEN ${VISIBLE_REGISTRATIONS} THEN 1 ELSE 0 END) AS registrations,
+            SUM(CASE WHEN ${VISIBLE_REGISTRATIONS} THEN 0 ELSE 1 END) AS unpaid,
             COUNT(DISTINCT registrations.campout) AS registration_types,
             MIN(order_created_at) AS first_order_at,
             MAX(order_created_at) AS last_order_at
      FROM registrations
      ${CAMPOUT_JOIN}
-     WHERE registrations.campout <> '' AND ${VISIBLE_REGISTRATIONS}
+     WHERE registrations.campout <> ''
      GROUP BY ${CAMPOUT_NAME}`,
   ).all();
 

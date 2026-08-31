@@ -19,7 +19,7 @@ import { fileURLToPath } from 'node:url';
 import { dirname, join } from 'node:path';
 
 import worker from '../src/index.js';
-import { REGISTRATION_FIELDS } from '../src/registrations.js';
+import { REGISTRATION_FIELDS, upsertRows } from '../src/registrations.js';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const schema = readFileSync(join(here, '..', 'schema.sql'), 'utf8');
@@ -199,6 +199,92 @@ test('the filter survives a campout mapped from several registration types', asy
   const nasa = campouts.campouts.find((c) => c.campout === 'NASA Campout');
   assert.equal(nasa.registrations, 3);
   assert.equal(nasa.registration_types, 2);
+});
+
+test('a campout whose signups were all abandoned still appears', async () => {
+  // The case the roster note exists for. If the campout dropped out of the
+  // list it would not be selectable, and the explanation would be unreachable
+  // exactly when somebody is asking where everyone went.
+  const env = seeded();
+  const cookie = await signIn(env);
+
+  insert(env.database, {
+    order_id: 'UNPAID_4',
+    line_item_uid: 'L1',
+    campout: 'Scout Registration - Ghost Campout',
+    name: 'Abandoned Only',
+    payment_status: 'UNPAID',
+  });
+
+  const body = await (await get(env, cookie, '/api/campouts')).json();
+  const ghost = body.campouts.find((c) => c.campout === 'Scout Registration - Ghost Campout');
+
+  assert.ok(ghost, 'the campout is still listed');
+  assert.equal(ghost.registrations, 0, 'but nobody is counted as signed up');
+  assert.equal(ghost.unpaid, 1);
+
+  // And selecting it explains itself rather than looking broken.
+  const campout = encodeURIComponent('Scout Registration - Ghost Campout');
+  const roster = await (await get(env, cookie, `/api/roster?campout=${campout}`)).json();
+  assert.equal(roster.rows.length, 0);
+  assert.equal(roster.unpaid, 1);
+});
+
+test('the campout list still dates itself from every order, paid or not', async () => {
+  // last_order_at feeds the "no parseable date" ordering in campouts.js.
+  // Filtering it by payment would shift which campout opens by default.
+  const env = seeded();
+  const cookie = await signIn(env);
+
+  insert(env.database, {
+    order_id: 'UNPAID_5',
+    line_item_uid: 'L1',
+    name: 'Latest But Unpaid',
+    payment_status: 'UNPAID',
+    order_created_at: '2026-09-30T12:00:00Z',
+  });
+
+  const body = await (await get(env, cookie, '/api/campouts')).json();
+  const nasa = body.campouts.find((c) => c.campout === 'Scout Registration - NASA Campout');
+  assert.equal(nasa.last_order_at, '2026-09-30T12:00:00Z');
+});
+
+test('a later sync cannot demote a row that was confirmed paid', async () => {
+  // The CLI backfill never reads the payments listing, and the Worker's own
+  // listing is a bounded walk -- so both can report a bare UNPAID for an order
+  // that really was paid. Neither may hide it.
+  const env = seeded();
+
+  const row = (overrides) => {
+    const base = Object.fromEntries(REGISTRATION_FIELDS.map((f) => [f, '']));
+    return { ...base, order_id: 'RESCUED', line_item_uid: 'L1', name: 'Rescued Scout', ...overrides };
+  };
+
+  await upsertRows(env, [row({ payment_status: 'PAID' })], '2026-08-01T00:00:00Z');
+  await upsertRows(env, [row({ payment_status: 'UNPAID' })], '2026-08-02T00:00:00Z');
+
+  const stored = env.database
+    .prepare("SELECT payment_status, synced_at FROM registrations WHERE order_id = 'RESCUED'")
+    .get();
+  assert.equal(stored.payment_status, 'PAID', 'absence of evidence does not beat evidence');
+  assert.equal(stored.synced_at, '2026-08-02T00:00:00Z', 'the rest of the row still updates');
+});
+
+test('an explicit cancellation does overwrite a stored PAID', async () => {
+  const env = seeded();
+
+  const row = (overrides) => {
+    const base = Object.fromEntries(REGISTRATION_FIELDS.map((f) => [f, '']));
+    return { ...base, order_id: 'DROPPED', line_item_uid: 'L1', ...overrides };
+  };
+
+  await upsertRows(env, [row({ payment_status: 'PAID' })], '2026-08-01T00:00:00Z');
+  await upsertRows(env, [row({ payment_status: 'CANCELED' })], '2026-08-02T00:00:00Z');
+
+  const stored = env.database
+    .prepare("SELECT payment_status FROM registrations WHERE order_id = 'DROPPED'")
+    .get();
+  assert.equal(stored.payment_status, 'CANCELED', 'a cancellation is evidence, not a gap');
 });
 
 test('an abandoned checkout does not conjure a registration type to configure', async () => {

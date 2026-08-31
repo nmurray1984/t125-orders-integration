@@ -99,6 +99,27 @@ export function normalizeRow(raw) {
   return row;
 }
 
+/**
+ * How payment_status is merged on conflict, rather than simply overwritten.
+ *
+ * UNPAID means "I found no evidence of payment", which is weaker than a stored
+ * PAID, which means "I saw the payment". Evidence has to beat the absence of
+ * it, because two paths produce a bare UNPAID for an order that really was
+ * paid: the CLI backfill (`--output d1`) never reads the payments listing at
+ * all, and the Worker's own listing is a bounded walk that may not reach an
+ * order it rescued on an earlier run. Letting either demote the row would hide
+ * a real registration -- permanently, once the order ages out of Square's
+ * rolling window and no later sync can put it back.
+ *
+ * CANCELED still overwrites PAID: a cancellation is evidence in its own right,
+ * not a failure to find any.
+ */
+const PAYMENT_STATUS_MERGE = `payment_status = CASE
+         WHEN registrations.payment_status = 'PAID' AND excluded.payment_status = 'UNPAID'
+           THEN 'PAID'
+         ELSE excluded.payment_status
+       END`;
+
 export async function upsertRows(env, rows, syncedAt) {
   const statement = env.DB.prepare(
     `INSERT INTO registrations (
@@ -108,7 +129,7 @@ export async function upsertRows(env, rows, syncedAt) {
      ON CONFLICT(order_id, line_item_uid) DO UPDATE SET
        ${REGISTRATION_FIELDS
          .filter((f) => f !== 'order_id' && f !== 'line_item_uid')
-         .map((f) => `${f} = excluded.${f}`)
+         .map((f) => (f === 'payment_status' ? PAYMENT_STATUS_MERGE : `${f} = excluded.${f}`))
          .join(',\n       ')},
        synced_at = excluded.synced_at`,
   );
