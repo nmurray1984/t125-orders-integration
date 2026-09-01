@@ -176,6 +176,9 @@ const SORTS = {
     String(a.order_created_at || '').localeCompare(String(b.order_created_at || '')) || byName(a, b),
 };
 
+// What the roster opens on; the <select> lists this option first to match.
+const DEFAULT_SORT = 'patrol';
+
 /**
  * The mobile card and the desktop row share one <tr>: CSS decides which
  * reading it gets. The name cell carries the tags so they stay with the
@@ -257,7 +260,7 @@ function applyView() {
     ? allRows.filter((row) => searchableText(row).includes(term))
     : allRows;
 
-  const sorted = [...filtered].sort(SORTS[el('sort').value] || byName);
+  const sorted = [...filtered].sort(SORTS[el('sort').value] || SORTS[DEFAULT_SORT]);
   renderRows(sorted);
 
   const scope = term ? `${sorted.length} of ${allRows.length}` : String(allRows.length);
