@@ -18,6 +18,9 @@ const RANK_ORDER = [
 
 let campouts = [];
 let allRows = [];
+// What the table shows right now, after the search filter and the sort. The
+// email copy works off this, so it matches what the page is showing.
+let visibleRows = [];
 let currentCampout = ALL;
 
 function show(section) {
@@ -261,10 +264,106 @@ function applyView() {
     : allRows;
 
   const sorted = [...filtered].sort(SORTS[el('sort').value] || SORTS[DEFAULT_SORT]);
+  visibleRows = sorted;
   renderRows(sorted);
+
+  // A copied-email count from a different filter would be a lie by the time
+  // anyone read it.
+  clearCopyStatus();
 
   const scope = term ? `${sorted.length} of ${allRows.length}` : String(allRows.length);
   el('summary').textContent = `Showing ${scope} registration${allRows.length === 1 ? '' : 's'}`;
+}
+
+/* --- Email list ------------------------------------------------------- */
+
+/**
+ * Addresses of the people currently shown, in table order.
+ *
+ * De-duplicated case-insensitively: one parent often pays for two scouts, and
+ * a repeated address in a To: field is what makes a mail client reject the
+ * whole line. Semicolons separate them because Outlook, Apple Mail and Gmail
+ * all accept that, while a comma splits some address books' entries.
+ */
+function emailList(rows) {
+  const seen = new Set();
+  const addresses = [];
+
+  for (const row of rows) {
+    const email = String(row.email || '').trim();
+    if (!email) continue;
+    const key = email.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    addresses.push(email);
+  }
+
+  return addresses;
+}
+
+/**
+ * The async clipboard API is unavailable on a plain-HTTP origin and refused
+ * outright by some browsers, so fall back to the old selection copy, which
+ * still works from inside a click handler.
+ */
+async function copyText(text) {
+  try {
+    await navigator.clipboard.writeText(text);
+    return true;
+  } catch {
+    const area = document.createElement('textarea');
+    area.value = text;
+    area.setAttribute('readonly', '');
+    area.style.position = 'fixed';
+    area.style.opacity = '0';
+    document.body.append(area);
+    area.select();
+
+    let copied = false;
+    try {
+      copied = document.execCommand('copy');
+    } catch {
+      copied = false;
+    }
+
+    area.remove();
+    return copied;
+  }
+}
+
+function setCopyStatus(message) {
+  const status = el('copy-status');
+  status.textContent = message;
+  status.hidden = !message;
+}
+
+function clearCopyStatus() {
+  setCopyStatus('');
+}
+
+async function copyEmails() {
+  const addresses = emailList(visibleRows);
+  if (!addresses.length) {
+    setCopyStatus('No email addresses to copy.');
+    return;
+  }
+
+  // Square records the buyer email, not one per registration, so a family's
+  // second scout has none of their own. Say how many were left out rather
+  // than letting the count look wrong against the headcount.
+  const skipped = visibleRows.length - addresses.length;
+  const copied = await copyText(addresses.join('; '));
+
+  if (!copied) {
+    setCopyStatus('Could not reach the clipboard. Copy the Email column from the table instead.');
+    return;
+  }
+
+  const plural = addresses.length === 1 ? '' : 'es';
+  setCopyStatus(
+    `Copied ${addresses.length} email address${plural}` +
+      (skipped > 0 ? `; ${skipped} more had no email of their own.` : '.'),
+  );
 }
 
 /* --- Loading ---------------------------------------------------------- */
@@ -413,12 +512,15 @@ el('login-form').addEventListener('submit', async (event) => {
 el('logout').addEventListener('click', async () => {
   await fetch('/api/logout', { method: 'POST', credentials: 'same-origin' });
   allRows = [];
+  visibleRows = [];
+  clearCopyStatus();
   show('login');
 });
 
 el('campout').addEventListener('change', (event) => showCampout(event.target.value));
 el('search').addEventListener('input', applyView);
 el('sort').addEventListener('change', applyView);
+el('copy-emails').addEventListener('click', copyEmails);
 el('print').addEventListener('click', () => window.print());
 
 // The setup page is a full navigation, so it does not need history handling
