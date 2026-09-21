@@ -69,12 +69,14 @@
         </label>
         <div class="actions">
           <a id="export" class="button" href="/api/export.csv" download>Download CSV</a>
+          <button type="button" id="copy-emails" class="ghost">Copy emails</button>
           <button type="button" id="print" class="ghost">Print</button>
         </div>
       </div>
     </div>
 
     <p id="summary" class="summary" aria-live="polite"></p>
+    <p id="copy-status" class="summary" role="status" aria-live="polite" hidden></p>
 
     <div class="table-wrap">
       <table id="roster">
