@@ -26,8 +26,12 @@ from mock_square_data import (
     mock_catalog_modifier_lists_response,
     mock_orders_response,
     mock_canceled_order,
+    mock_fully_refunded_order,
     mock_orders_with_modifier_lists_response,
+    mock_partially_refunded_order,
     mock_refunded_order,
+    mock_rejected_refund_order,
+    mock_return_order,
     mock_unpaid_order,
 )
 
@@ -59,6 +63,24 @@ def tender_json(tender):
     return out
 
 
+def refund_json(refund):
+    return {
+        'id': refund.id,
+        'status': refund.status,
+        'amount_money': money_json(getattr(refund, 'amount_money', None)),
+    }
+
+
+def return_json(order_return):
+    return {
+        'source_order_id': order_return.source_order_id,
+        'return_line_items': [
+            {'uid': item.uid, 'source_line_item_uid': item.source_line_item_uid}
+            for item in order_return.return_line_items
+        ],
+    }
+
+
 def order_json(order):
     return {
         'id': order.id,
@@ -68,6 +90,9 @@ def order_json(order):
         'state': getattr(order, 'state', None),
         'tenders': [tender_json(t) for t in getattr(order, 'tenders', None) or []],
         'net_amount_due_money': money_json(getattr(order, 'net_amount_due_money', None)),
+        # What says whether it was refunded, in full or line by line.
+        'refunds': [refund_json(r) for r in getattr(order, 'refunds', None) or []],
+        'returns': [return_json(r) for r in getattr(order, 'returns', None) or []],
         'fulfillments': [fulfillment_json(f) for f in getattr(order, 'fulfillments', None) or []],
         'total_money': money_json(order.total_money),
         'line_items': [
@@ -101,7 +126,9 @@ def catalog_json(obj):
 def main():
     orders = (list(mock_orders_response.orders)
               + list(mock_orders_with_modifier_lists_response.orders)
-              + [mock_refunded_order, mock_unpaid_order, mock_canceled_order])
+              + [mock_refunded_order, mock_unpaid_order, mock_canceled_order,
+                 mock_fully_refunded_order, mock_partially_refunded_order,
+                 mock_return_order, mock_rejected_refund_order])
 
     modifiers = (list(mock_catalog_modifiers_response.objects)
                  + list(mock_catalog_modifiers_with_list_response.objects))

@@ -20,6 +20,7 @@
 export const PAID = 'PAID';
 export const UNPAID = 'UNPAID';
 export const CANCELED = 'CANCELED';
+export const REFUNDED = 'REFUNDED';
 export const UNKNOWN = '';
 
 /** Statuses a payment can carry without any money having moved. */
@@ -42,9 +43,74 @@ function amount(money) {
 }
 
 /**
- * PAID, UNPAID, CANCELED, or '' when the order says nothing either way.
+ * Refund statuses that mean the money is not going back after all. Anything
+ * else -- PENDING included -- counts: a refund that is still processing is a
+ * decision already made, and the person is not coming.
+ */
+const DEAD_REFUND_STATES = new Set(['REJECTED', 'FAILED']);
+
+function liveRefunds(order) {
+  return (order.refunds || []).filter((refund) => !DEAD_REFUND_STATES.has(refund?.status));
+}
+
+/** Whether any refund against this order is completed or in progress. */
+export function hasLiveRefund(order) {
+  return liveRefunds(order).length > 0;
+}
+
+/**
+ * Whether the live refunds cover the whole order.
  *
- * Checked in order of how directly each signal reports money: a tender is a
+ * A partial refund says money went back, not whose -- on an order that signed
+ * up two scouts it could be either of them, or a fee. Only a refund of the
+ * full total marks every line item; a partial one is pinned to a person by
+ * refundedLineItems() or not at all. An order with no total to compare
+ * against has only the refund to go on.
+ */
+function fullyRefunded(order) {
+  const refunds = liveRefunds(order);
+  if (!refunds.length) return false;
+
+  const total = amount(order.total_money);
+  if (!total) return true;
+
+  const refunded = refunds.reduce((sum, refund) => sum + (amount(refund.amount_money) || 0), 0);
+  return refunded >= total;
+}
+
+/**
+ * Line items that were refunded individually, as order id -> Set of line
+ * item uids.
+ *
+ * An itemized refund in Square creates a separate return order whose
+ * `returns` point back at the original order and line items. Return orders
+ * are newer than the orders they return, so the same SearchOrders page that
+ * holds the original holds the return. Only honored where the original order
+ * carries a live refund, so a return whose refund failed changes nothing.
+ */
+export function refundedLineItems(orders) {
+  const byOrder = new Map();
+
+  for (const order of orders || []) {
+    for (const ret of order?.returns || []) {
+      if (!ret?.source_order_id) continue;
+      for (const item of ret.return_line_items || []) {
+        if (!item?.source_line_item_uid) continue;
+        if (!byOrder.has(ret.source_order_id)) byOrder.set(ret.source_order_id, new Set());
+        byOrder.get(ret.source_order_id).add(item.source_line_item_uid);
+      }
+    }
+  }
+
+  return byOrder;
+}
+
+/**
+ * PAID, UNPAID, CANCELED, REFUNDED, or '' when the order says nothing either
+ * way.
+ *
+ * A refund of the whole order outranks the payment it undoes. Otherwise
+ * checked in order of how directly each signal reports money: a tender is a
  * payment attached to this order, the amount still due is Square's own
  * arithmetic over those tenders, and the state is a summary that lags both --
  * a paid order can sit in OPEN until it is fulfilled.
@@ -52,6 +118,7 @@ function amount(money) {
 export function orderPaymentStatus(order) {
   if (!order) return UNKNOWN;
   if (order.state === 'CANCELED') return CANCELED;
+  if (fullyRefunded(order)) return REFUNDED;
 
   if (hasLiveTender(order)) return PAID;
 
@@ -67,6 +134,16 @@ export function orderPaymentStatus(order) {
 /** Whether a status should keep a registration off the roster. */
 export function isUnpaidStatus(status) {
   return status === UNPAID || status === CANCELED;
+}
+
+/**
+ * The status one line item ends up with: the order's, unless that line was
+ * refunded on its own. `refunded` is the map from refundedLineItems().
+ */
+export function lineItemPaymentStatus(order, lineItem, orderStatus, refunded) {
+  if (orderStatus === CANCELED || orderStatus === REFUNDED) return orderStatus;
+  if (!hasLiveRefund(order)) return orderStatus;
+  return refunded?.get(order.id)?.has(lineItem?.uid) ? REFUNDED : orderStatus;
 }
 
 /**

@@ -7,8 +7,11 @@ import { dirname, join } from 'node:path';
 import { runSync } from '../src/sync.js';
 import { REGISTRATION_FIELDS } from '../src/registrations.js';
 
-/** The fixture's seven line items: five payable-looking, two that never paid. */
-const FIXTURE_ROWS = 7;
+/**
+ * The fixture's eleven line items: seven payable-looking, two that never paid,
+ * and two refunded (one whole order, one line of a two-scout order).
+ */
+const FIXTURE_ROWS = 11;
 
 /** Bound values are positional; look them up by field name, not by counting. */
 const field = (values, name) => values[REGISTRATION_FIELDS.indexOf(name)];
@@ -305,4 +308,25 @@ test('a payments failure leaves the order\'s own verdict standing', async () => 
   const result = await runSync(env);
   assert.equal(result.ok, true, 'the sync still completes');
   assert.equal(result.unpaid, 2, 'no second opinion, so the order decides alone');
+});
+
+test('refunded registrations are stored, marked, and reported', async () => {
+  // A refund leaves the order COMPLETED with its tender intact, so without
+  // reading the refunds the person stays on the roster.
+  const env = baseEnv();
+  stubSquare();
+
+  const result = await runSync(env);
+
+  const byLine = Object.fromEntries(
+    env.DB.upserts.map((values) => [field(values, 'line_item_uid'), field(values, 'payment_status')]),
+  );
+  assert.equal(byLine.LINE_ITEM_FR_1, 'REFUNDED', 'a pending refund of the whole order counts');
+  assert.equal(byLine.LINE_ITEM_PR_2, 'REFUNDED', 'the line the return order names');
+  assert.equal(byLine.LINE_ITEM_PR_1, 'PAID', 'the other scout on that order is still going');
+  assert.equal(byLine.LINE_ITEM_RR_1, 'PAID', 'a rejected refund changes nothing');
+
+  assert.equal(result.refunded, 2);
+  assert.equal(result.unpaid, 2, 'refunds are not counted as unpaid');
+  assert.match(env.DB.syncLog[0].join(' '), /2 refunded row\(s\)/);
 });

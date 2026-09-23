@@ -35,5 +35,7 @@ export const ROSTER_COLUMNS = [
   { key: 'campout', label: 'Campout' },
   { key: 'variation_name', label: 'Registration Type' },
   { key: 'total_money', label: 'Total Paid' },
+  // Blank on older rows; REFUNDED when refunded rows were asked for.
+  { key: 'payment_status', label: 'Payment Status' },
   { key: 'order_id', label: 'Order ID' },
 ];

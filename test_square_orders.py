@@ -22,7 +22,12 @@ from mock_square_data import (
     MockCardDetails,
     MockMoney,
     MockOrder,
+    MockRefund,
     MockTender,
+    mock_fully_refunded_order,
+    mock_partially_refunded_order,
+    mock_rejected_refund_order,
+    mock_return_order,
 )
 
 # Import the functions we want to test
@@ -206,6 +211,15 @@ def test_payment_status():
                net_amount_due_money=MockMoney(15000, "USD")), 'UNPAID'),
         ("an order that says nothing at all is left unknown",
          order(), ''),
+        ("a full refund still processing is refunded",
+         order(state="COMPLETED", tenders=[captured],
+               refunds=[MockRefund("R", "PENDING", MockMoney(15000, "USD"))]), 'REFUNDED'),
+        ("a partial refund leaves the order paid",
+         order(state="COMPLETED", tenders=[captured],
+               refunds=[MockRefund("R", "COMPLETED", MockMoney(5000, "USD"))]), 'PAID'),
+        ("a rejected refund leaves the order paid",
+         order(state="COMPLETED", tenders=[captured],
+               refunds=[MockRefund("R", "REJECTED", MockMoney(15000, "USD"))]), 'PAID'),
     ]
 
     results = []
@@ -241,6 +255,27 @@ def test_payment_status_reaches_every_row():
     return all(results)
 
 
+def test_refunded_line_items():
+    """An itemized refund marks only the line its return order names."""
+    print("\nTesting refunds on extracted rows...")
+
+    orders = [mock_fully_refunded_order, mock_partially_refunded_order,
+              mock_return_order, mock_rejected_refund_order]
+    modifier_details = {obj.id: obj for obj in mock_catalog_modifiers_response.objects}
+    rows = extract_order_data(orders, modifier_details)
+    by_line = {row['line_item_uid']: row['payment_status'] for row in rows}
+
+    results = [
+        check("a fully refunded order is REFUNDED", by_line['LINE_ITEM_FR_1'] == 'REFUNDED'),
+        check("the returned line is REFUNDED", by_line['LINE_ITEM_PR_2'] == 'REFUNDED'),
+        check("the other line on that order is still PAID", by_line['LINE_ITEM_PR_1'] == 'PAID'),
+        check("a rejected refund is still PAID", by_line['LINE_ITEM_RR_1'] == 'PAID'),
+        check("the return order itself produces no row",
+              not any(r['order_id'] == 'ORDER_RETURN' for r in rows)),
+    ]
+    return all(results)
+
+
 def main():
     """Run all tests"""
     print("Running tests for Square Orders processing with mock data...")
@@ -255,6 +290,7 @@ def main():
     test_results.append(test_with_modifier_lists())
     test_results.append(test_payment_status())
     test_results.append(test_payment_status_reaches_every_row())
+    test_results.append(test_refunded_line_items())
     
     # Summary
     print("\n" + "=" * 60)

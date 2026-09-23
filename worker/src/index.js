@@ -14,11 +14,15 @@ import { annotateCampouts } from './campouts.js';
 import { CAMPOUT_JOIN, CAMPOUT_NAME, groupSuggestions } from './mapping.js';
 import { ROSTER_COLUMNS, toCsv } from './csv.js';
 import {
+  ATTENDING_REGISTRATIONS,
+  REFUNDED_REGISTRATIONS,
   VISIBLE_REGISTRATIONS,
   normalizeRow,
+  rosterFilter,
   recordSync,
   upsertRows,
 } from './registrations.js';
+import { REFUNDED } from './payments.js';
 import { runSync } from './sync.js';
 import {
   applyGrouping,
@@ -142,8 +146,9 @@ async function handleCampouts(env) {
   const { results } = await env.DB.prepare(
     `SELECT ${CAMPOUT_NAME} AS campout,
             MAX(c.starts_at) AS configured_starts_at,
-            SUM(CASE WHEN ${VISIBLE_REGISTRATIONS} THEN 1 ELSE 0 END) AS registrations,
+            SUM(CASE WHEN ${ATTENDING_REGISTRATIONS} THEN 1 ELSE 0 END) AS registrations,
             SUM(CASE WHEN ${VISIBLE_REGISTRATIONS} THEN 0 ELSE 1 END) AS unpaid,
+            SUM(CASE WHEN ${REFUNDED_REGISTRATIONS} THEN 1 ELSE 0 END) AS refunded,
             COUNT(DISTINCT registrations.campout) AS registration_types,
             MIN(order_created_at) AS first_order_at,
             MAX(order_created_at) AS last_order_at
@@ -159,12 +164,12 @@ async function handleCampouts(env) {
   });
 }
 
-/** Headcount per patrol, for meal planning. */
+/** Headcount per patrol, for meal planning. Refunded people are not coming. */
 async function patrolCounts(env, campout) {
   if (!campout || campout === ALL_CAMPOUTS) {
     const { results } = await env.DB.prepare(
       `SELECT patrol, COUNT(*) AS headcount FROM registrations
-       WHERE ${VISIBLE_REGISTRATIONS}
+       WHERE ${ATTENDING_REGISTRATIONS}
        GROUP BY patrol ORDER BY headcount DESC, patrol ASC`,
     ).all();
     return results ?? [];
@@ -174,28 +179,29 @@ async function patrolCounts(env, campout) {
     `SELECT registrations.patrol AS patrol, COUNT(*) AS headcount
      FROM registrations
      ${CAMPOUT_JOIN}
-     WHERE ${CAMPOUT_NAME} = ?1 AND ${VISIBLE_REGISTRATIONS}
+     WHERE ${CAMPOUT_NAME} = ?1 AND ${ATTENDING_REGISTRATIONS}
      GROUP BY registrations.patrol
      ORDER BY headcount DESC, patrol ASC`,
   ).bind(campout).all();
   return results ?? [];
 }
 
-async function rosterRows(env, campout) {
+async function rosterRows(env, campout, includeRefunded = false) {
+  const filter = rosterFilter(includeRefunded);
   const query =
     campout && campout !== ALL_CAMPOUTS
       ? env.DB.prepare(
           `SELECT registrations.*, ${CAMPOUT_NAME} AS campout_name
            FROM registrations
            ${CAMPOUT_JOIN}
-           WHERE ${CAMPOUT_NAME} = ?1 AND ${VISIBLE_REGISTRATIONS}
+           WHERE ${CAMPOUT_NAME} = ?1 AND ${filter}
            ORDER BY registrations.patrol ASC, registrations.name ASC`,
         ).bind(campout)
       : env.DB.prepare(
           `SELECT registrations.*, ${CAMPOUT_NAME} AS campout_name
            FROM registrations
            ${CAMPOUT_JOIN}
-           WHERE ${VISIBLE_REGISTRATIONS}
+           WHERE ${filter}
            ORDER BY registrations.order_created_at DESC,
                     registrations.patrol ASC, registrations.name ASC`,
         );
@@ -204,51 +210,60 @@ async function rosterRows(env, campout) {
 }
 
 /**
- * How many registrations are being withheld for want of a payment.
+ * How many registrations are being withheld: for want of a payment, and for
+ * having been refunded.
  *
  * Hiding them silently is what turns an abandoned checkout into "the roster is
- * broken" -- somebody swears they signed up and is not on the list. The count
- * says the sync saw them and Square never took the money.
+ * broken" -- somebody swears they signed up and is not on the list. The counts
+ * say the sync saw them and why they are not listed.
  */
-async function unpaidCount(env, campout) {
+async function withheldCounts(env, campout) {
+  const select = `SUM(CASE WHEN ${VISIBLE_REGISTRATIONS} THEN 0 ELSE 1 END) AS unpaid,
+                  SUM(CASE WHEN ${REFUNDED_REGISTRATIONS} THEN 1 ELSE 0 END) AS refunded`;
   const query =
     campout && campout !== ALL_CAMPOUTS
       ? env.DB.prepare(
-          `SELECT COUNT(*) AS unpaid
+          `SELECT ${select}
            FROM registrations
            ${CAMPOUT_JOIN}
-           WHERE ${CAMPOUT_NAME} = ?1 AND NOT (${VISIBLE_REGISTRATIONS})`,
+           WHERE ${CAMPOUT_NAME} = ?1`,
         ).bind(campout)
-      : env.DB.prepare(
-          `SELECT COUNT(*) AS unpaid FROM registrations
-           WHERE NOT (${VISIBLE_REGISTRATIONS})`,
-        );
+      : env.DB.prepare(`SELECT ${select} FROM registrations`);
 
   const row = await query.first();
-  return row?.unpaid ?? 0;
+  return { unpaid: row?.unpaid ?? 0, refunded: row?.refunded ?? 0 };
+}
+
+/** `?refunded=1` lists refunded registrations too; they are left out otherwise. */
+function wantsRefunded(url) {
+  return url.searchParams.get('refunded') === '1';
 }
 
 async function handleRoster(url, env) {
   const campout = url.searchParams.get('campout');
-  const [rows, patrols, unpaid] = await Promise.all([
-    rosterRows(env, campout),
+  const includeRefunded = wantsRefunded(url);
+  const [rows, patrols, withheld] = await Promise.all([
+    rosterRows(env, campout, includeRefunded),
     patrolCounts(env, campout),
-    unpaidCount(env, campout),
+    withheldCounts(env, campout),
   ]);
 
   return json({
     campout: campout ?? ALL_CAMPOUTS,
     rows,
     patrols,
-    headcount: rows.length,
-    unpaid,
+    // Only the people going: a refunded row shown on request is not one.
+    headcount: rows.filter((row) => row.payment_status !== REFUNDED).length,
+    unpaid: withheld.unpaid,
+    refunded: withheld.refunded,
+    include_refunded: includeRefunded,
     last_synced_at: await lastSyncedAt(env),
   });
 }
 
 async function handleExport(url, env) {
   const campout = url.searchParams.get('campout');
-  const rows = await rosterRows(env, campout);
+  const rows = await rosterRows(env, campout, wantsRefunded(url));
   const label = (campout && campout !== ALL_CAMPOUTS ? campout : 'all-campouts')
     .replace(/[^A-Za-z0-9._-]+/g, '-')
     .replace(/^-+|-+$/g, '')

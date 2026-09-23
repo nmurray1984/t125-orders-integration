@@ -26,6 +26,55 @@ test('a refunded order with no total_money reads as 0 USD', () => {
   assert.equal(refunded.total_money, '0 USD');
 });
 
+test('a partial refund without a return order hides nobody', () => {
+  // It says money went back, not whose -- on a two-scout order it could be
+  // either, or a fee.
+  const order = {
+    id: 'PARTIAL',
+    state: 'COMPLETED',
+    total_money: { amount: 30000, currency: 'USD' },
+    tenders: [{ uid: 'T' }],
+    refunds: [{ id: 'R', status: 'COMPLETED', amount_money: { amount: 5000, currency: 'USD' } }],
+    line_items: [{ uid: 'A', name: 'Camp' }, { uid: 'B', name: 'Camp' }],
+  };
+  const rows = extractRows([order], {});
+  assert.deepEqual(rows.map((r) => r.payment_status), ['PAID', 'PAID']);
+});
+
+test('refunds that add up to the total refund the whole order', () => {
+  const order = {
+    id: 'SPLIT',
+    state: 'COMPLETED',
+    total_money: { amount: 30000, currency: 'USD' },
+    tenders: [{ uid: 'T' }],
+    refunds: [
+      { id: 'R1', status: 'COMPLETED', amount_money: { amount: 15000, currency: 'USD' } },
+      { id: 'R2', status: 'PENDING', amount_money: { amount: 15000, currency: 'USD' } },
+      { id: 'R3', status: 'FAILED', amount_money: { amount: 30000, currency: 'USD' } },
+    ],
+    line_items: [{ uid: 'A', name: 'Camp' }, { uid: 'B', name: 'Camp' }],
+  };
+  const rows = extractRows([order], {});
+  assert.deepEqual(rows.map((r) => r.payment_status), ['REFUNDED', 'REFUNDED']);
+});
+
+test('a return order whose refund failed refunds nothing', () => {
+  const order = {
+    id: 'KEPT',
+    state: 'COMPLETED',
+    total_money: { amount: 30000, currency: 'USD' },
+    tenders: [{ uid: 'T' }],
+    refunds: [{ id: 'R', status: 'FAILED', amount_money: { amount: 15000, currency: 'USD' } }],
+    line_items: [{ uid: 'A', name: 'Camp' }, { uid: 'B', name: 'Camp' }],
+  };
+  const ret = {
+    id: 'RET',
+    returns: [{ source_order_id: 'KEPT', return_line_items: [{ source_line_item_uid: 'B' }] }],
+  };
+  const rows = extractRows([order, ret], {});
+  assert.deepEqual(rows.map((r) => r.payment_status), ['PAID', 'PAID']);
+});
+
 test('"Question: Answer" in a modifier name is split', () => {
   const rows = extractRows(orders, catalogById);
   const row = rows.find((r) => r.order_id === 'ORDER_1');

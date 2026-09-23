@@ -75,6 +75,7 @@ def extract_order_email(order):
 PAID = 'PAID'
 UNPAID = 'UNPAID'
 CANCELED = 'CANCELED'
+REFUNDED = 'REFUNDED'
 UNKNOWN = ''
 
 # Statuses a payment can carry without any money having moved.
@@ -96,11 +97,80 @@ def _money_amount(money):
     return amount if isinstance(amount, int) else None
 
 
+# Refund statuses that mean the money is not going back after all. Anything
+# else -- PENDING included -- counts: a refund still processing is a decision
+# already made, and the person is not coming.
+DEAD_REFUND_STATES = {'REJECTED', 'FAILED'}
+
+
+def _live_refunds(order):
+    return [refund for refund in getattr(order, 'refunds', None) or []
+            if getattr(refund, 'status', None) not in DEAD_REFUND_STATES]
+
+
+def has_live_refund(order):
+    """True when any refund against the order is completed or in progress."""
+    return bool(_live_refunds(order))
+
+
+def _fully_refunded(order):
+    """
+    Whether the live refunds cover the whole order.
+
+    A partial refund says money went back, not whose, so it only marks a line
+    item when refunded_line_items() pins it to one. An order with no total to
+    compare against has only the refund to go on.
+    """
+    refunds = _live_refunds(order)
+    if not refunds:
+        return False
+
+    total = _money_amount(getattr(order, 'total_money', None))
+    if not total:
+        return True
+
+    refunded = sum(_money_amount(getattr(r, 'amount_money', None)) or 0 for r in refunds)
+    return refunded >= total
+
+
+def refunded_line_items(orders):
+    """
+    Line items refunded individually, as {order_id: {line_item_uid, ...}}.
+
+    An itemized refund creates a separate return order whose `returns` point
+    back at the original order and line items; see refundedLineItems() in
+    worker/src/payments.js.
+    """
+    by_order = {}
+    for order in orders or []:
+        for ret in getattr(order, 'returns', None) or []:
+            source_order_id = getattr(ret, 'source_order_id', None)
+            if not source_order_id:
+                continue
+            for item in getattr(ret, 'return_line_items', None) or []:
+                uid = getattr(item, 'source_line_item_uid', None)
+                if uid:
+                    by_order.setdefault(source_order_id, set()).add(uid)
+    return by_order
+
+
+def line_item_payment_status(order, line_item, order_status, refunded):
+    """The order's status, unless this one line was refunded on its own."""
+    if order_status in (CANCELED, REFUNDED):
+        return order_status
+    if not has_live_refund(order):
+        return order_status
+    uid = getattr(line_item, 'uid', None)
+    return REFUNDED if uid in refunded.get(getattr(order, 'id', None), set()) else order_status
+
+
 def payment_status(order):
     """
-    PAID, UNPAID, CANCELED, or '' when the order says nothing either way.
+    PAID, UNPAID, CANCELED, REFUNDED, or '' when the order says nothing either
+    way.
 
-    Checked in order of how directly each signal reports money: a tender is a
+    A refund of the whole order outranks the payment it undoes. Otherwise
+    checked in order of how directly each signal reports money: a tender is a
     payment attached to this order, the amount still due is Square's own
     arithmetic over those tenders, and the state is a summary that lags both --
     a paid order can sit in OPEN until it is fulfilled.
@@ -111,6 +181,8 @@ def payment_status(order):
     state = getattr(order, 'state', None)
     if state == 'CANCELED':
         return CANCELED
+    if _fully_refunded(order):
+        return REFUNDED
 
     if _has_live_tender(order):
         return PAID
@@ -315,7 +387,10 @@ def get_recent_orders():
 def extract_order_data(orders, modifier_details):
     """Extract order data into a structured format for table creation"""
     order_data = []
-    
+    # Itemized refunds arrive as separate return orders, so gather them across
+    # the whole batch before reading any line item.
+    refunded = refunded_line_items(orders)
+
     for order in orders:
         order_id = order.id
         if order.total_money:
@@ -331,7 +406,7 @@ def extract_order_data(orders, modifier_details):
         email = extract_order_email(order)
         customer_id = getattr(order, 'customer_id', None) or ''
         # Whether the buyer paid is a property of the order, so every line item
-        # on it inherits the same answer.
+        # on it inherits the same answer -- unless that one line was refunded.
         order_payment_status = payment_status(order)
         
         if hasattr(order, 'line_items') and order.line_items:
@@ -344,7 +419,8 @@ def extract_order_data(orders, modifier_details):
                     'order_id': order_id,
                     'line_item_uid': getattr(line_item, 'uid', '') or '',
                     'order_created_at': order_created_at,
-                    'payment_status': order_payment_status,
+                    'payment_status': line_item_payment_status(
+                        order, line_item, order_payment_status, refunded),
                     'email': email,
                     'customer_id': customer_id,
                     'total_money': total_money,

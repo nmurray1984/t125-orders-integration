@@ -9,7 +9,7 @@
 
 import { extractRows, modifierIdsByVersion, modifierListIdsByVersion } from './extract.js';
 import { buildRegistration, normalizeRow, recordSync, upsertRows } from './registrations.js';
-import { PAID, UNPAID, isUnpaidStatus } from './payments.js';
+import { PAID, REFUNDED, UNPAID, isUnpaidStatus } from './payments.js';
 import {
   fetchCatalogObjects,
   fetchCustomerEmail,
@@ -132,6 +132,8 @@ export async function runSync(env) {
   // Written, but hidden from the roster: an abandoned checkout that is paid
   // for later flips back to PAID on a later sync.
   const hidden = rows.filter((row) => isUnpaidStatus(row.payment_status)).length;
+  // Also written, and listed only when the roster asks for them.
+  const refunded = rows.filter((row) => row.payment_status === REFUNDED).length;
 
   if (rows.length) await upsertRows(env, rows, syncedAt);
 
@@ -142,6 +144,7 @@ export async function runSync(env) {
       `${config.environment}`,
       `${orders.length} order(s)`,
       hidden ? `${hidden} unpaid row(s) hidden` : '',
+      refunded ? `${refunded} refunded row(s)` : '',
       skipped ? `${skipped} row(s) skipped` : '',
     ].filter(Boolean).join(', '),
   });
@@ -152,6 +155,7 @@ export async function runSync(env) {
     orders: orders.length,
     upserted: rows.length,
     unpaid: hidden,
+    refunded,
     skipped,
     synced_at: syncedAt,
   };
