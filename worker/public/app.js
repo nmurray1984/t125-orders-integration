@@ -115,16 +115,25 @@ function tag(text, variant) {
 
 /* --- Headcount tiles -------------------------------------------------- */
 
-function renderTotals(patrols, headcount, unpaid = 0) {
+function renderTotals(patrols, headcount, unpaid = 0, refunded = 0, showingRefunded = false) {
   el('hero-total').textContent = String(headcount);
 
   // Registrations Square never took money for are left off the roster
-  // entirely. Say so, or the first question is why someone is missing.
+  // entirely, and refunded ones unless asked for. Say so, or the first
+  // question is why someone is missing.
+  const notes = [];
+  if (unpaid) {
+    notes.push(unpaid === 1
+      ? '1 checkout started but never paid for, not shown'
+      : `${unpaid} checkouts started but never paid for, not shown`);
+  }
+  if (refunded) {
+    const who = refunded === 1 ? '1 refunded registration' : `${refunded} refunded registrations`;
+    notes.push(showingRefunded ? `${who} shown but not counted` : `${who} not shown`);
+  }
   const note = el('unpaid-note');
-  note.hidden = !unpaid;
-  note.textContent = unpaid === 1
-    ? '1 checkout started but never paid for, not shown'
-    : `${unpaid} checkouts started but never paid for, not shown`;
+  note.hidden = !notes.length;
+  note.textContent = notes.join('; ');
 
   const list = el('patrol-tiles');
   list.replaceChildren();
@@ -192,6 +201,8 @@ function renderRows(rows) {
 
   for (const row of rows) {
     const tr = document.createElement('tr');
+    const refunded = row.payment_status === 'REFUNDED';
+    if (refunded) tr.className = 'row-refunded';
 
     for (const column of COLUMNS) {
       const td = document.createElement('td');
@@ -233,7 +244,13 @@ function renderRows(rows) {
         if (!row.rank && row.scouter_name) tags.append(tag('Adult', 'adult'));
         if (/^no$/i.test(row.travel_to_campout)) tags.append(tag('Own transport', 'warn'));
 
-        td.append(name, tags);
+        td.append(name);
+        if (refunded) {
+          const flag = tag('Refunded');
+          flag.classList.add('refunded-flag');
+          td.append(flag);
+        }
+        td.append(tags);
       } else {
         td.append(column.phone && value ? phoneLink(value) : document.createTextNode(value));
       }
@@ -422,13 +439,25 @@ async function loadCampouts() {
   el('sync-note').textContent = formatSyncedAt(data.last_synced_at);
 }
 
+/** Query string for the roster and its CSV: the campout, plus refunded rows if ticked. */
+function rosterQuery() {
+  const showRefunded = el('show-refunded').checked;
+  return `campout=${encodeURIComponent(currentCampout)}${showRefunded ? '&refunded=1' : ''}`;
+}
+
 async function loadRoster() {
-  const response = await api(`/api/roster?campout=${encodeURIComponent(currentCampout)}`);
+  const response = await api(`/api/roster?${rosterQuery()}`);
   const data = await response.json();
 
   allRows = data.rows || [];
-  renderTotals(data.patrols || [], data.headcount ?? allRows.length, data.unpaid ?? 0);
-  el('export').href = `/api/export.csv?campout=${encodeURIComponent(currentCampout)}`;
+  renderTotals(
+    data.patrols || [],
+    data.headcount ?? allRows.length,
+    data.unpaid ?? 0,
+    data.refunded ?? 0,
+    Boolean(data.include_refunded),
+  );
+  el('export').href = `/api/export.csv?${rosterQuery()}`;
   renderHeader();
   applyView();
 }
@@ -520,6 +549,7 @@ el('logout').addEventListener('click', async () => {
 el('campout').addEventListener('change', (event) => showCampout(event.target.value));
 el('search').addEventListener('input', applyView);
 el('sort').addEventListener('change', applyView);
+el('show-refunded').addEventListener('change', () => loadRoster());
 el('copy-emails').addEventListener('click', copyEmails);
 el('print').addEventListener('click', () => window.print());
 

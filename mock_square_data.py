@@ -49,6 +49,24 @@ class MockTender:
         self.uid = uid
         self.card_details = card_details
 
+class MockRefund:
+    """A refund against an order. PENDING still counts; REJECTED/FAILED do not."""
+    def __init__(self, id, status, amount_money):
+        self.id = id
+        self.status = status
+        self.amount_money = amount_money
+
+class MockReturnLineItem:
+    def __init__(self, uid, source_line_item_uid):
+        self.uid = uid
+        self.source_line_item_uid = source_line_item_uid
+
+class MockOrderReturn:
+    """Carried by a return order: which order and line items it refunds."""
+    def __init__(self, source_order_id, return_line_items=None):
+        self.source_order_id = source_order_id
+        self.return_line_items = return_line_items or []
+
 class MockOrder:
     """
     A Square order.
@@ -59,7 +77,7 @@ class MockOrder:
     """
     def __init__(self, id, total_money, line_items=None, created_at=None,
                  fulfillments=None, customer_id=None, state=None, tenders=None,
-                 net_amount_due_money=None):
+                 net_amount_due_money=None, refunds=None, returns=None):
         self.id = id
         self.total_money = total_money
         self.line_items = line_items or []
@@ -69,6 +87,8 @@ class MockOrder:
         self.state = state
         self.tenders = tenders or []
         self.net_amount_due_money = net_amount_due_money
+        self.refunds = refunds or []
+        self.returns = returns or []
 
 class MockModifierData:
     def __init__(self, name, modifier_list_id=None):
@@ -384,6 +404,108 @@ mock_canceled_order = MockOrder(
                 MockModifier(
                     uid="MODIFIER_C_1_1",
                     name="Scout Name: Canceled Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        )
+    ]
+)
+
+# Mock order refunded in full while the refund is still processing. A pending
+# refund already means the person is not coming.
+mock_fully_refunded_order = MockOrder(
+    id="ORDER_FULL_REFUND",
+    total_money=MockMoney(15000, "USD"),
+    state="COMPLETED",
+    tenders=[MockTender("TENDER_FR", MockCardDetails("CAPTURED"))],
+    refunds=[MockRefund("REFUND_FR", "PENDING", MockMoney(15000, "USD"))],
+    line_items=[
+        MockLineItem(
+            uid="LINE_ITEM_FR_1",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_LINE_ITEM_FR_1",
+                    name="Scout Name: Fully Refunded Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        )
+    ]
+)
+
+# Mock order registering two scouts where only one was refunded. Square records
+# which one through a separate return order (mock_return_order below).
+mock_partially_refunded_order = MockOrder(
+    id="ORDER_PARTIAL_REFUND",
+    total_money=MockMoney(30000, "USD"),
+    state="COMPLETED",
+    tenders=[MockTender("TENDER_PR", MockCardDetails("CAPTURED"))],
+    refunds=[MockRefund("REFUND_PR", "COMPLETED", MockMoney(15000, "USD"))],
+    line_items=[
+        MockLineItem(
+            uid="LINE_ITEM_PR_1",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_LINE_ITEM_PR_1",
+                    name="Scout Name: Still Going Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        ),
+        MockLineItem(
+            uid="LINE_ITEM_PR_2",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_LINE_ITEM_PR_2",
+                    name="Scout Name: Dropped Out Scout",
+                    catalog_object_id="MODIFIER_1"
+                )
+            ]
+        )
+    ]
+)
+
+# The return order an itemized refund creates. It has no line items of its
+# own, so it never becomes a roster row; it only names what was returned.
+mock_return_order = MockOrder(
+    id="ORDER_RETURN",
+    total_money=None,
+    state="COMPLETED",
+    returns=[MockOrderReturn("ORDER_PARTIAL_REFUND", [
+        MockReturnLineItem("RETURN_LINE_1", "LINE_ITEM_PR_2"),
+    ])],
+)
+
+# Mock order whose refund was rejected: the money stayed, so did the scout.
+mock_rejected_refund_order = MockOrder(
+    id="ORDER_REJECTED_REFUND",
+    total_money=MockMoney(15000, "USD"),
+    state="COMPLETED",
+    tenders=[MockTender("TENDER_RR", MockCardDetails("CAPTURED"))],
+    refunds=[MockRefund("REFUND_RR", "REJECTED", MockMoney(15000, "USD"))],
+    line_items=[
+        MockLineItem(
+            uid="LINE_ITEM_RR_1",
+            name="Camp Registration",
+            catalog_object_id="CATALOG_ITEM_1",
+            catalog_version=1,
+            variation_name="Basic Registration",
+            modifiers=[
+                MockModifier(
+                    uid="MODIFIER_LINE_ITEM_RR_1",
+                    name="Scout Name: Rejected Refund Scout",
                     catalog_object_id="MODIFIER_1"
                 )
             ]

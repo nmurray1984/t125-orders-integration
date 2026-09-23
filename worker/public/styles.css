@@ -173,7 +173,7 @@ button[disabled] { opacity: .6; cursor: progress; }
   color: var(--muted);
 }
 
-/* Only appears when Square has orders it never took money for. */
+/* Only appears when unpaid or refunded registrations are being held back. */
 .hero-note {
   margin: .45rem 0 0;
   font-size: .72rem;
@@ -215,6 +215,19 @@ button[disabled] { opacity: .6; cursor: progress; }
 }
 
 .actions { display: flex; gap: .5rem; margin-left: auto; }
+
+/* Refunded registrations are off the roster unless this is ticked. */
+.toggle {
+  display: flex;
+  align-items: center;
+  gap: .4rem;
+  font-size: .85rem;
+  font-weight: 600;
+  color: var(--muted);
+  padding-bottom: .55rem;
+  cursor: pointer;
+}
+.toggle input { width: auto; margin: 0; padding: 0; }
 .summary { font-size: .85rem; color: var(--muted); margin: 0 0 .75rem; }
 .empty { text-align: center; color: var(--muted); padding: 2rem 0; }
 
@@ -238,6 +251,12 @@ button[disabled] { opacity: .6; cursor: progress; }
 .tag-patrol { background: var(--surface-sunken); color: var(--text); }
 .tag-adult { background: var(--surface-sunken); color: var(--text); }
 .tag-warn { background: var(--warn-bg); color: var(--warn-text); }
+
+/* Shown on request only, and never counted: a refunded person is not coming.
+   The flag sits outside .tags so it shows on desktop rows too. */
+.refunded-flag { margin-left: .4rem; background: var(--warn-bg); color: var(--warn-text); }
+tr.row-refunded td { color: var(--muted); }
+tr.row-refunded .person-name { text-decoration: line-through; }
 
 /* --- Table ---------------------------------------------------------- */
 

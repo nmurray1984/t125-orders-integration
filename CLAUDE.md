@@ -198,6 +198,17 @@ already fetched for emails can promote UNPAID to PAID, never the reverse. The
 listing is a bounded walk, so a missing entry proves nothing -- but a present
 one proves payment.
 
+**Refunds** (`REFUNDED`, same two parsers): a refunded order stays `COMPLETED`
+with its tender intact, so it is detected from the order's `refunds` (any status
+but REJECTED/FAILED -- a PENDING refund counts). Live refunds totalling the order
+refund every line; an itemized refund is pinned to one line through the separate
+return order Square creates (`returns[].source_order_id` /
+`return_line_items[].source_line_item_uid`). A partial refund with no return order
+hides nobody. Refunded rows are synced and plainly overwritten like any status (a
+failed refund flips back), never count toward headcounts or patrols, and are
+listed only with `?refunded=1` on `/api/roster` and `/api/export.csv` -- the
+roster's "Show refunded" checkbox, unchecked by default.
+
 **Read-only enforcement**: `ALLOWED_REQUESTS` in `worker/src/square.js` maps path
 -> method, and the method is enforced. `GET /v2/payments` lists payments; `POST`
 to the same path is CreatePayment. Allowing a path without pinning its verb would

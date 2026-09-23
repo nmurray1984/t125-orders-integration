@@ -7,7 +7,7 @@
  * lost past campouts in the spreadsheet era.
  */
 
-import { HIDDEN_PAYMENT_STATUSES } from './payments.js';
+import { HIDDEN_PAYMENT_STATUSES, REFUNDED } from './payments.js';
 
 const UPSERT_CHUNK_SIZE = 50;
 
@@ -46,6 +46,23 @@ const DEFAULT_PATROL = 'Rocking Chair';
  */
 export const VISIBLE_REGISTRATIONS =
   `registrations.payment_status NOT IN (${HIDDEN_PAYMENT_STATUSES.map((s) => `'${s}'`).join(', ')})`;
+
+/**
+ * The rows that count as going: visible, and not refunded.
+ *
+ * Refunded rows are kept apart from unpaid ones on purpose. Somebody did pay,
+ * and a registrar may want to see who dropped out, so the roster can show them
+ * on request -- but they never count toward a headcount or a patrol.
+ */
+export const ATTENDING_REGISTRATIONS =
+  `(${VISIBLE_REGISTRATIONS} AND registrations.payment_status <> '${REFUNDED}')`;
+
+/** Rows the roster lists: refunded ones only when asked for. */
+export function rosterFilter(includeRefunded) {
+  return includeRefunded ? VISIBLE_REGISTRATIONS : ATTENDING_REGISTRATIONS;
+}
+
+export const REFUNDED_REGISTRATIONS = `registrations.payment_status = '${REFUNDED}'`;
 
 function text(value) {
   return value === null || value === undefined ? '' : String(value);

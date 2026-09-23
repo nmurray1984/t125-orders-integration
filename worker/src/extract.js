@@ -13,7 +13,7 @@
  * deliberately (scripts/make_worker_fixture.py), never quietly adjusted.
  */
 
-import { orderPaymentStatus } from './payments.js';
+import { lineItemPaymentStatus, orderPaymentStatus, refundedLineItems } from './payments.js';
 
 const FIELD_BY_QUESTION = {
   'Scout Name': 'scout_name',
@@ -120,15 +120,19 @@ function fromModifierName(row, modifierName) {
  */
 export function extractRows(orders, catalogById) {
   const rows = [];
+  // Itemized refunds arrive as separate return orders, so they are gathered
+  // across the whole batch before any line item is read.
+  const refunded = refundedLineItems(orders);
 
   for (const order of orders) {
     const totalMoney = formatMoney(order.total_money);
     // Whether the buyer paid is a property of the order, so every line item on
-    // it inherits the same answer.
+    // it inherits the same answer -- unless that one line was refunded.
     const paymentStatus = orderPaymentStatus(order);
 
     for (const lineItem of order.line_items || []) {
-      const row = emptyRow(order, lineItem, totalMoney, paymentStatus);
+      const status = lineItemPaymentStatus(order, lineItem, paymentStatus, refunded);
+      const row = emptyRow(order, lineItem, totalMoney, status);
 
       for (const modifier of lineItem.modifiers || []) {
         const catalogObject = catalogById[modifier.catalog_object_id];

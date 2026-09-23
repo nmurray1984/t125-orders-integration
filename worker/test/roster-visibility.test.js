@@ -306,3 +306,82 @@ test('an abandoned checkout does not conjure a registration type to configure', 
   assert.deepEqual(names, ['Scout Registration - NASA Campout']);
   assert.equal(body.registration_types[0].registrations, 2, 'the hidden rows are not counted');
 });
+
+/* --- Refunds ---------------------------------------------------------- */
+
+function withRefund() {
+  const env = seeded();
+  insert(env.database, {
+    order_id: 'REFUNDED_1', line_item_uid: 'L1', name: 'Refunded Scout', payment_status: 'REFUNDED',
+  });
+  return env;
+}
+
+test('refunded registrations are left off the roster by default', async () => {
+  const env = withRefund();
+  const cookie = await signIn(env);
+
+  const body = await (await get(env, cookie, '/api/roster')).json();
+  assert.deepEqual(body.rows.map((row) => row.name).sort(), ['Legacy Scout', 'Paid Scout']);
+  assert.equal(body.refunded, 1, 'but counted, so the page can say so');
+  assert.equal(body.unpaid, 2, 'and not lumped in with abandoned checkouts');
+  assert.equal(body.include_refunded, false);
+});
+
+test('asking for refunded rows lists them without counting them', async () => {
+  const env = withRefund();
+  const cookie = await signIn(env);
+
+  const campout = encodeURIComponent('Scout Registration - NASA Campout');
+  for (const path of ['/api/roster?refunded=1', `/api/roster?campout=${campout}&refunded=1`]) {
+    const body = await (await get(env, cookie, path)).json();
+    assert.deepEqual(
+      body.rows.map((row) => row.name).sort(),
+      ['Legacy Scout', 'Paid Scout', 'Refunded Scout'],
+      path,
+    );
+    assert.equal(body.headcount, 2, 'a refunded person is not coming');
+    assert.equal(body.patrols.find((p) => p.patrol === 'Eagle').headcount, 2);
+    assert.ok(!body.rows.some((row) => row.name === 'Abandoned Scout'), 'unpaid stays hidden');
+  }
+});
+
+test('the campout list does not count refunded registrations', async () => {
+  const env = withRefund();
+  const cookie = await signIn(env);
+
+  const body = await (await get(env, cookie, '/api/campouts')).json();
+  assert.equal(body.campouts[0].registrations, 2);
+  assert.equal(body.campouts[0].refunded, 1);
+});
+
+test('the CSV export follows the refunded checkbox', async () => {
+  const env = withRefund();
+  const cookie = await signIn(env);
+
+  const plain = await (await get(env, cookie, '/api/export.csv')).text();
+  assert.doesNotMatch(plain, /Refunded Scout/);
+
+  const withRefunded = await (await get(env, cookie, '/api/export.csv?refunded=1')).text();
+  assert.match(withRefunded, /Refunded Scout.*REFUNDED/);
+  assert.doesNotMatch(withRefunded, /Abandoned Scout/);
+});
+
+test('a refund overwrites a stored PAID, and a failed refund flips it back', async () => {
+  const env = seeded();
+
+  const row = (overrides) => {
+    const base = Object.fromEntries(REGISTRATION_FIELDS.map((f) => [f, '']));
+    return { ...base, order_id: 'REFUND_ME', line_item_uid: 'L1', ...overrides };
+  };
+  const status = () => env.database
+    .prepare("SELECT payment_status FROM registrations WHERE order_id = 'REFUND_ME'")
+    .get().payment_status;
+
+  await upsertRows(env, [row({ payment_status: 'PAID' })], '2026-08-01T00:00:00Z');
+  await upsertRows(env, [row({ payment_status: 'REFUNDED' })], '2026-08-02T00:00:00Z');
+  assert.equal(status(), 'REFUNDED');
+
+  await upsertRows(env, [row({ payment_status: 'PAID' })], '2026-08-03T00:00:00Z');
+  assert.equal(status(), 'PAID', 'the order is the authority on its own refunds');
+});
