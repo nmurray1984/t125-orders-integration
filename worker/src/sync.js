@@ -55,7 +55,7 @@ async function fetchPaymentsForRows(config, rows) {
  * promote a row to PAID -- the absence of one changes nothing, since the
  * listing is a bounded walk that may not reach every order.
  */
-function confirmPayments(rows, paymentsByOrder) {
+export function confirmPayments(rows, paymentsByOrder) {
   for (const row of rows) {
     if (row.payment_status !== UNPAID) continue;
     if (paymentsByOrder.get(row.order_id)?.paid) row.payment_status = PAID;
@@ -72,7 +72,7 @@ function confirmPayments(rows, paymentsByOrder) {
  *
  * All of it is best-effort -- a missing email must never fail a sync.
  */
-async function fillMissingEmails(config, rows, paymentsByOrder) {
+export async function fillMissingEmails(config, rows, paymentsByOrder) {
   for (const row of rows) {
     if (!row.email) row.email = paymentsByOrder.get(row.order_id)?.email || '';
   }

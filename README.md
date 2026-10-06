@@ -32,6 +32,7 @@ front end filters by campout name.
 | `square_orders.py` | local CLI for inspecting Square data and manual backfills |
 | `d1_sync.py` | pushes CLI-extracted rows to the Worker |
 | `seed_local.py` | fake registrations for local development |
+| `worker/scripts/reconcile.mjs` | full Square-vs-D1 reconciliation, dry run unless `--apply` |
 | `scripts/make_worker_fixture.py` | regenerates the fixtures pinning the Worker parser to the Python one |
 
 The Python parser is no longer in the production path -- the Worker has its

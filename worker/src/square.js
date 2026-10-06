@@ -167,8 +167,10 @@ export async function listLocations(config) {
  * paid for: the order's own tenders answer that first, and this only ever
  * upgrades an order to paid, never the other way -- one listing covers the
  * whole batch, but it is a bounded walk and a missing entry proves nothing.
+ *
+ * `maxPages` bounds that walk; the reconcile script passes Infinity.
  */
-export async function fetchPayments(config, beginTime) {
+export async function fetchPayments(config, beginTime, { maxPages = 10 } = {}) {
   const byOrder = new Map();
   let cursor;
   let pages = 0;
@@ -195,7 +197,7 @@ export async function fetchPayments(config, beginTime) {
 
     cursor = payload.cursor;
     pages += 1;
-  } while (cursor && pages < 10);   // bound the walk; the sync is time-boxed
+  } while (cursor && pages < maxPages);   // bound the walk; the sync is time-boxed
 
   return byOrder;
 }

@@ -50,6 +50,18 @@ Trigger the deployed sync immediately instead of waiting for the cron:
 curl -X POST https://<worker>/api/run-sync -H "Authorization: Bearer <SYNC_TOKEN>"
 ```
 
+Fully reconcile D1 against Square's *entire* history (the cron only sees the
+newest `SQUARE_FETCH_LIMIT` orders and 10 pages of payments). Uses the Worker's
+own parser; dry run unless `--apply`; PAID->UNPAID demotions and deleting rows
+Square no longer has each need their own flag. Reports land in `worker/.reconcile/`:
+
+```bash
+cd worker
+node scripts/reconcile.mjs                 # report only
+node scripts/reconcile.mjs --apply         # insert missing rows, fix drifted fields
+node scripts/reconcile.mjs --apply --allow-demote --delete-orphans
+```
+
 ### Run Tests
 ```bash
 python test_square_orders.py   # modifier parsing, mock Square data
